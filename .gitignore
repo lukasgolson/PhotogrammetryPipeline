@@ -1,3 +1,5 @@
 data/video/*
 tmp
 /bin/Metashape*
+/third-party/*
+

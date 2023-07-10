@@ -3,6 +3,9 @@
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/.idea/ZeppelinRemoteNotebooks" />
+      <excludeFolder url="file://$MODULE_DIR$/third-party/IRSSMediaTools" />
+      <excludeFolder url="file://$MODULE_DIR$/third-party/SkyRemoval/model" />
+      <excludeFolder url="file://$MODULE_DIR$/third-party/SkyRemoval/venv" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
