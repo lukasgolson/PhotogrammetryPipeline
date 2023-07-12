@@ -2,7 +2,6 @@
 Python Bindings for IRSSMediaTools.
 """
 
-
 import shlex
 import subprocess
 
@@ -14,7 +13,7 @@ from pathlib import Path
 import requests
 
 # Define constant for the base directory.
-BASE_DIRECTORY = "third-party/IRSSMediaTools"
+BASE_DIRECTORY = Path("third-party") / Path("IRSSMediaTools")
 
 # Mapping for platform-specific data.
 PLATFORM_DATA = {
@@ -43,7 +42,7 @@ def get_platform_data():
     return PLATFORM_DATA[system]
 
 
-def calculate_path():
+def calculate_path() -> Path:
     """
     Calculates the path of the media tools based on the operating system.
     """
@@ -54,7 +53,7 @@ def calculate_path():
     # Formulate the path using the folder and extension information.
     path = os.path.join(BASE_DIRECTORY, folder, f'IRSSMediaTools{extension}')
     print(f"Generated path: {path}")
-    return path
+    return Path(path)
 
 
 def setup_irss_media_tools() -> None:
@@ -80,8 +79,6 @@ def download_and_extract_zip(url: str) -> None:
     """
     # Define the path for the downloaded zip file.
     local_path = os.path.join(BASE_DIRECTORY, "download.zip")
-
-
 
     # Make a request to download the file.
     response = requests.get(url, stream=True)
@@ -117,7 +114,8 @@ def run_command(cmd: str) -> int:
         The exit code of the subprocess.
     """
 
-    cmd = f'{calculate_path()} {cmd}'
+    cmd = f'{calculate_path().resolve()} {cmd}'
+    print(f"Running command: {cmd}")
 
     with subprocess.Popen(shlex.split(cmd, posix=False), stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1,
                           universal_newlines=True) as p:
@@ -125,7 +123,11 @@ def run_command(cmd: str) -> int:
             line = p.stdout.readline()
             if not line:
                 break
-            print(line)
+            print(line.strip())
+
+            # process stderr
+        for line in p.stderr:
+            print(line.strip())
 
         exit_code = p.poll()
     return exit_code
