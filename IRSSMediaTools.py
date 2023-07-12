@@ -12,22 +12,21 @@ from pathlib import Path
 
 import requests
 
+from tqdm import tqdm
+
 # Define constant for the base directory.
 BASE_DIRECTORY = Path("third-party") / Path("IRSSMediaTools")
 
 # Mapping for platform-specific data.
 PLATFORM_DATA = {
     'Windows': {
-        'folder': 'win-x64',
         'extension': '.exe',
         'url': "https://github.com/lukasdragon/MediaTools/releases/download/latest/win-x64.zip"
     },
     'Darwin': {
-        'folder': 'osx-x64',
         'url': "https://github.com/lukasdragon/MediaTools/releases/download/latest/osx-x64.zip"
     },
     'Linux': {
-        'folder': 'linux-x64',
         'url': "https://github.com/lukasdragon/MediaTools/releases/download/latest/linux-x64.zip"
     },
 }
@@ -47,11 +46,10 @@ def calculate_path() -> Path:
     Calculates the path of the media tools based on the operating system.
     """
     platform_data = get_platform_data()
-    folder = platform_data.get('folder', "")
     extension = platform_data.get('extension', "")
 
     # Formulate the path using the folder and extension information.
-    path = os.path.join(BASE_DIRECTORY, folder, f'IRSSMediaTools{extension}')
+    path = os.path.join(BASE_DIRECTORY, f'IRSSMediaTools{extension}')
     print(f"Generated path: {path}")
     return Path(path)
 
@@ -79,27 +77,25 @@ def download_and_extract_zip(url: str) -> None:
     """
     # Define the path for the downloaded zip file.
     local_path = os.path.join(BASE_DIRECTORY, "download.zip")
-
-    # Make a request to download the file.
-    response = requests.get(url, stream=True)
-
-    # Ensure the base directory exists.
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
 
-    # Write the response content to the file in chunks.
+    response = requests.get(url, stream=True)
+    total_size = int(response.headers.get('content-length', 0))
+
+    progress_bar = tqdm(total=total_size, unit='iB', unit_scale=True)
     with open(local_path, 'wb') as file:
         for chunk in response.iter_content(chunk_size=1024):
             if chunk:
                 file.write(chunk)
+                progress_bar.update(len(chunk))
+    progress_bar.close(leave=False)
 
     print(f"Downloaded {url} to {local_path}")
 
-    # Extract the contents of the zip file.
     with zipfile.ZipFile(local_path, 'r') as zip_ref:
         zip_ref.extractall(BASE_DIRECTORY)
     print(f"Extracted all files to {BASE_DIRECTORY}")
 
-    # Clean up by removing the downloaded zip file.
     os.remove(local_path)
 
 
