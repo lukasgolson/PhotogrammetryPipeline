@@ -2,26 +2,27 @@
 A framework for managing and executing downloadable tools.
 """
 
-import os
 import platform
 import shlex
 import subprocess
 import zipfile
 from pathlib import Path
+from typing import Dict
 
 import requests
 from tqdm import tqdm
 
 
 class DownloadableTool:
-    BASE_DIRECTORY = Path("third-party")
+    BASE_DIRECTORY = Path("../third-party")
+    CHUNK_SIZE = 1024  # define magic constant
 
-    def __init__(self, tool_name: str, platform_data: dict):
+    def __init__(self, tool_name: str, platform_data: Dict[str, dict]):
         self.tool_name = tool_name
         self.platform_data = platform_data
         self.tool_directory = self.BASE_DIRECTORY / self.tool_name
 
-    def get_platform_data(self):
+    def get_platform_data(self) -> dict:
         """Retrieves platform-specific data from the dictionary."""
         system = platform.system()
         if system not in self.platform_data:
@@ -34,41 +35,40 @@ class DownloadableTool:
         """
         platform_data = self.get_platform_data()
         extension = platform_data.get('extension', "")
-        path = os.path.join(self.tool_directory, f'{self.tool_name}{extension}')
+        path = self.tool_directory / f'{self.tool_name}{extension}'
         print(f"Generated path: {path}")
-        return Path(path)
+        return path
 
     def setup(self) -> None:
         """
         Sets up the tool by downloading and extracting it.
         """
-        if Path(self.calculate_path()).exists():
+        if self.calculate_path().exists():
             print(f"{self.tool_name} already installed.")
             return
 
-        os.makedirs(self.tool_directory, exist_ok=True)
+        self.tool_directory.mkdir(parents=True, exist_ok=True)
         print(f"Installing {self.tool_name}...")
         url = self.get_platform_data()['url']
-        self.__download_and_extract_zip__(url)
+        self._download_and_extract_zip(url)
         print(f"{self.tool_name} installed.")
 
-    def __download_and_extract_zip__(self, url: str) -> None:
+    def _download_and_extract_zip(self, url: str) -> None:
         """
         Downloads a zip file from the given URL and extracts it.
         """
-        local_path = os.path.join(self.tool_directory, "download.zip")
-        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        local_path = self.tool_directory / "download.zip"
 
         response = requests.get(url, stream=True)
         total_size = int(response.headers.get('content-length', 0))
 
-        progress_bar = tqdm(total=total_size, unit='iB', unit_scale=True)
+        progress_bar = tqdm(total=total_size, unit='iB', unit_scale=True, desc=f"Downloading {url}")
         with open(local_path, 'wb') as file:
-            for chunk in response.iter_content(chunk_size=1024):
+            for chunk in response.iter_content(chunk_size=self.CHUNK_SIZE):
                 if chunk:
                     file.write(chunk)
                     progress_bar.update(len(chunk))
-        progress_bar.close(leave=False)
+        progress_bar.close()
 
         print(f"Downloaded {url} to {local_path}")
 
@@ -76,7 +76,7 @@ class DownloadableTool:
             zip_ref.extractall(self.tool_directory)
         print(f"Extracted all files to {self.tool_directory}")
 
-        os.remove(local_path)
+        local_path.unlink()
 
     def run_command(self, cmd: str) -> int:
         """
