@@ -3,3 +3,4 @@ tmp
 /bin/Metashape*
 /third-party/*
 
+**/__pycache__/*
