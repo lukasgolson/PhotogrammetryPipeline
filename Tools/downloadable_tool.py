@@ -17,10 +17,11 @@ class DownloadableTool:
     BASE_DIRECTORY = Path("../third-party")
     CHUNK_SIZE = 1024  # define magic constant
 
-    def __init__(self, tool_name: str, platform_data: Dict[str, dict]):
+    def __init__(self, tool_name: str, platform_data: Dict[str, dict], python: bool = False):
         self.tool_name = tool_name
         self.platform_data = platform_data
         self.tool_directory = self.BASE_DIRECTORY / self.tool_name
+        self.python = python  # add python flag as an object field
 
     def get_platform_data(self) -> dict:
         """Retrieves platform-specific data from the dictionary."""
@@ -34,8 +35,14 @@ class DownloadableTool:
         Calculates the path of the tool based on the operating system.
         """
         platform_data = self.get_platform_data()
+        subdir = platform_data.get('subdir', "")
         extension = platform_data.get('extension', "")
-        path = self.tool_directory / f'{self.tool_name}{extension}'
+
+        if subdir:
+            path = self.tool_directory / subdir / f'{self.tool_name}{extension}'
+        else:
+            path = self.tool_directory / f'{self.tool_name}{extension}'
+
         print(f"Generated path: {path}")
         return path
 
@@ -88,7 +95,10 @@ class DownloadableTool:
         Returns:
             The exit code of the subprocess.
         """
-        cmd = f'{self.calculate_path().resolve()} {cmd}'
+        if self.python:  # use python flag as an object field
+            cmd = f'python {cmd}'
+        else:
+            cmd = f'{self.calculate_path().resolve()} {cmd}'
         print(f"Running command: {cmd}")
 
         with subprocess.Popen(shlex.split(cmd, posix=False), stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1,
