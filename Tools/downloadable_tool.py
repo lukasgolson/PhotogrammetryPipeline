@@ -15,13 +15,13 @@ from tqdm import tqdm
 
 
 class DownloadableTool:
-    BASE_DIRECTORY = Path("./third-party")
     CHUNK_SIZE = 1024  # define magic constant
 
-    def __init__(self, tool_name: str, platform_data: Dict[str, dict], python: bool = False):
+    def __init__(self, tool_name: str, platform_data: Dict[str, dict], python: bool = False,
+                 base_dir: Path = "./third-party"):
         self.tool_name = tool_name
         self.platform_data = platform_data
-        self.tool_directory = self.BASE_DIRECTORY / self.tool_name
+        self.tool_directory = base_dir / self.tool_name
         self.python = python  # add python flag as an object field
 
     def get_platform_data(self) -> dict:

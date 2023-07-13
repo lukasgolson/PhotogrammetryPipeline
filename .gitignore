@@ -6,3 +6,6 @@ tmp
 **/__pycache__/*
 /model/model.onnx
 /model/url.txt
+
+
+*.lic

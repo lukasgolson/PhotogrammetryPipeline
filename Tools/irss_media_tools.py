@@ -21,10 +21,12 @@ class MediaTools:
         },
     }
 
-    def __init__(self):
+    def __init__(self, base_dir: Path = "./third-party"):
         self.tool = downloadable_tool.DownloadableTool(
             tool_name="IRSSMediaTools",
-            platform_data=self.PLATFORM_DATA)
+            platform_data=self.PLATFORM_DATA,
+            python=False,
+            base_dir=base_dir)
         self.tool.setup()
 
     def extract_frames(self, video_path: Path, output_path: Path, drop: float = 0.5) -> None:

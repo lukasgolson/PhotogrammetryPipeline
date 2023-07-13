@@ -13,13 +13,14 @@ PLATFORM_DATA = {platform: {'extension': EXTENSION, 'subdir': SUBDIR, 'url': URL
 
 
 class SkyRemoval:
-    def __init__(self):
+    def __init__(self, base_dir: Path = "./third-party"):
         try:
 
             self.tool = downloadable_tool.DownloadableTool(
                 tool_name="SkyRemoval",
                 platform_data=PLATFORM_DATA,
-                python=True)
+                python=True,
+                base_dir=base_dir)
             self.tool.setup()
 
         except Exception as e:
