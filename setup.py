@@ -1,9 +1,8 @@
 import subprocess
 import sys
 
+from Tools.irss_media_tools import MediaTools
 from helpers import get_all_files
-
-from Tools import IRSSMediaTools
 
 
 def install_and_import(package, path_to_whl=None):
@@ -35,7 +34,7 @@ def main():
         package_name = whl.stem.split('-')[0]  # Get package name from .whl file
         install_and_import(package_name, f'bin/{whl.name}')
 
-    IRSSMediaTools.MediaTools().tool.setup()
+    MediaTools().tool.setup()
 
 
 print("Setup complete.")

@@ -1,3 +1,5 @@
+import os
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +21,7 @@ class SkyRemoval:
                 platform_data=PLATFORM_DATA,
                 python=True)
             self.tool.setup()
+
         except Exception as e:
             print(f"Failed to setup the tool: {e}")
             raise
@@ -39,9 +42,13 @@ class SkyRemoval:
        :raises Exception: If there is a failure in executing the command to the SkyRemoval tool.
        """
 
+        if not destination.exists():
+            os.mkdir(destination)
+
         command = _form_sky_removal_command(source, destination, model, ignore_cache, in_size_w, in_size_h)
         try:
-            self.tool.run_command(command)
+            exit_code = self.tool.run_command(command)
+            print(f"Sky removal completed with exit code: {exit_code}")
         except Exception as e:
             print(f"Failed to execute the command: {e}")
             raise
@@ -52,7 +59,7 @@ def _form_sky_removal_command(source: Path, destination: Path, model: Optional[s
     """Form the command string to pass to the SkyRemoval tool
     :rtype: str
     """
-    command = f"{source.resolve()} {destination.resolve()}"
+    command = f'{source.resolve()} {destination.resolve()}'
     if model:
         command += f" --model {model}"
     if ignore_cache:
@@ -62,7 +69,3 @@ def _form_sky_removal_command(source: Path, destination: Path, model: Optional[s
     if in_size_h:
         command += f" --in_size_h {in_size_h}"
     return command
-
-
-if __name__ == "__main__":
-    SkyRemoval()

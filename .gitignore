@@ -4,3 +4,5 @@ tmp
 /third-party/*
 
 **/__pycache__/*
+/model/model.onnx
+/model/url.txt

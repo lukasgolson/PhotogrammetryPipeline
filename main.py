@@ -16,12 +16,14 @@ import Tools
 from Tools.irss_media_tools import MediaTools
 from Tools.sky_removal import SkyRemoval
 from helpers import get_all_files
-import Metashape
 
 # %%
 DATA_PATH = Path("data")
 VIDEO_PATH = DATA_PATH / "video"
 TEMP_PATH = Path("tmp")
+FRAMES_PATH = TEMP_PATH / "frames"
+MASK_PATH = TEMP_PATH / "mask"
+
 # %%
 if TEMP_PATH.exists():
     shutil.rmtree(TEMP_PATH)
@@ -35,11 +37,10 @@ for file in video_files:
 
 media_tools = MediaTools()
 for video_file in video_files:
-    media_tools.extract_frames(video_file, TEMP_PATH / "frames", 0.95)
-# %%
+    media_tools.extract_frames(video_file, FRAMES_PATH, 0.5)
+#%%
 
 sky_removal = SkyRemoval()
+sky_removal.remove_sky(FRAMES_PATH, MASK_PATH)
 
-sky_removal.remove_sky(TEMP_PATH / "frames", TEMP_PATH / "frames_masked")
-
-
+#%%

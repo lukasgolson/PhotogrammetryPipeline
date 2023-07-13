@@ -45,8 +45,7 @@ class MediaTools:
 
         try:
             exit_code = self.tool.run_command(command)
-            if exit_code != 0:
-                raise subprocess.CalledProcessError(exit_code, command)
+            print(f"Extracting frames from video at path: {video_path} completed with exit code: {exit_code}")
         except Exception as e:
             print(f"Exception occurred while extracting frames from video at path: {video_path}. Details: {e}")
             raise e

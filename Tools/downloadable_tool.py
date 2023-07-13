@@ -5,6 +5,7 @@ A framework for managing and executing downloadable tools.
 import platform
 import shlex
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 from typing import Dict
@@ -14,7 +15,7 @@ from tqdm import tqdm
 
 
 class DownloadableTool:
-    BASE_DIRECTORY = Path("../third-party")
+    BASE_DIRECTORY = Path("./third-party")
     CHUNK_SIZE = 1024  # define magic constant
 
     def __init__(self, tool_name: str, platform_data: Dict[str, dict], python: bool = False):
@@ -34,17 +35,24 @@ class DownloadableTool:
         """
         Calculates the path of the tool based on the operating system.
         """
+        directory = self.calculate_dir()
         platform_data = self.get_platform_data()
-        subdir = platform_data.get('subdir', "")
         extension = platform_data.get('extension', "")
-
-        if subdir:
-            path = self.tool_directory / subdir / f'{self.tool_name}{extension}'
-        else:
-            path = self.tool_directory / f'{self.tool_name}{extension}'
-
+        path = directory / f'{self.tool_name}{extension}'
         print(f"Generated path: {path}")
         return path
+
+    def calculate_dir(self) -> Path:
+        """
+        Calculates the directory path of the tool based on the operating system.
+        """
+        platform_data = self.get_platform_data()
+        subdir = platform_data.get('subdir', "")
+        if subdir:
+            directory = self.tool_directory / subdir
+        else:
+            directory = self.tool_directory
+        return directory
 
     def setup(self) -> None:
         """
@@ -58,6 +66,18 @@ class DownloadableTool:
         print(f"Installing {self.tool_name}...")
         url = self.get_platform_data()['url']
         self._download_and_extract_zip(url)
+
+        if self.python:
+
+            requirements = (self.calculate_dir() / "requirements.txt")
+
+            if requirements.exists():
+                print("Installing packages from requirements.txt...")
+                subprocess.check_call(
+                    [sys.executable, "-m", "pip", "install", "-r",
+                     requirements.resolve()])
+                print("All packages from requirements.txt have been installed.")
+
         print(f"{self.tool_name} installed.")
 
     def _download_and_extract_zip(self, url: str) -> None:
@@ -95,8 +115,8 @@ class DownloadableTool:
         Returns:
             The exit code of the subprocess.
         """
-        if self.python:  # use python flag as an object field
-            cmd = f'python {cmd}'
+        if self.python:
+            cmd = f'python {self.calculate_path().resolve()} {cmd}'
         else:
             cmd = f'{self.calculate_path().resolve()} {cmd}'
         print(f"Running command: {cmd}")
@@ -113,5 +133,5 @@ class DownloadableTool:
             for line in p.stderr:
                 print(line.strip())
 
-            exit_code = p.poll()
+            exit_code = p.wait()
         return exit_code
