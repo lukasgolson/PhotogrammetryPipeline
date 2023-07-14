@@ -84,27 +84,24 @@ def process_frames(data: Path, frames: Path, mask_path: Union[Path, None] = None
     pbar = tqdm(total=total_sets, desc="Processing", dynamic_ncols=True)
 
     for i in range(0, len(frames), set_size):
+        match_list = list()
+        align_list = list()
+
         for j, camera in enumerate(chunk.cameras):
             if i <= j < (i + match_window):
-                camera.selected = True
-            else:
-                camera.selected = False
+                match_list.append(camera)
+            elif i <= j < (i + set_size):
+                align_list.append(camera)
 
         print(f"Matching photos {i} to {i + match_window}")
         try:
-            chunk.matchPhotos(downscale=2, generic_preselection=True, reference_preselection=False)
+            chunk.matchPhotos(downscale=2, generic_preselection=True, reference_preselection=False, cameras=match_list)
         except Exception as e:
             handle_error(e)
 
-        for j, camera in enumerate(chunk.cameras):
-            if i <= j < (i + set_size):
-                camera.selected = True
-            else:
-                camera.selected = False
-
         print(f"Aligning frames {i} to {i + set_size}")
         try:
-            chunk.alignCameras()
+            chunk.alignCameras(cameras=align_list)
         except Exception as e:
             handle_error(e)
 
@@ -117,26 +114,17 @@ def process_frames(data: Path, frames: Path, mask_path: Union[Path, None] = None
     print("Optimizing alignment...")
     chunk.optimizeCameras()
 
-    for camera in chunk.cameras:
-        camera.selected = False
-
-    selected_count = 0
-
+    realign_list = list()
     for camera in tqdm(chunk.cameras, desc="Aligning unaligned", dynamic_ncols=True):
-        if camera.transform:
-            camera.selected = False
-        else:
-            camera.selected = True
-            selected_count += 1
+        if not camera.transform:
+            realign_list.append(camera)
+            if len(realign_list) >= 100:
+                chunk.alignCameras(reset_alignment=True, cameras=realign_list)
+                realign_list = list()
+                doc.save()
 
-        if selected_count >= 100:
-            chunk.alignCameras(reset_alignment=True)
-            selected_count = 0
-
-            doc.save()
-
-    if selected_count > 0:
-        chunk.alignCameras(reset_alignment=True)
+    if realign_list:
+        chunk.alignCameras(reset_alignment=True, cameras=realign_list)
 
     doc.save()
 
@@ -144,3 +132,4 @@ def process_frames(data: Path, frames: Path, mask_path: Union[Path, None] = None
     chunk.optimizeCameras()
 
     doc.save()
+
