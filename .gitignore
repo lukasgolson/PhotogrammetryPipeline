@@ -1,5 +1,4 @@
-data/video/*
-tmp
+data/*
 /bin/Metashape*
 /third-party/*
 

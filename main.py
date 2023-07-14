@@ -1,56 +1,85 @@
-# %% md
-# # Tree Reconstruction from Video
-# 
-# To install before first use:
-# 1) Download and place the Agisoft Metashape 2.02 WHS file from
-# https://www.agisoft.com/downloads/installer/ into the `bin` folder.
-#
-#
-# 2) run the following command in the terminal: ```python setup.py```
-# 
-# %%
-import os
+"""
+# Tree Reconstruction from Video
+Before first use:
+1) Download and place the Agisoft Metashape 2.02 WHS file from
+https://www.agisoft.com/downloads/installer/ into the `bin` folder.
+
+2) Run the following command in the terminal: ```python setup.py```
+"""
 import shutil
-import sys
 from pathlib import Path
 
-from Tools.irss_media_tools import MediaTools
-from Tools.sky_removal import SkyRemoval
-from agisoft_metashape import process_frames
+from typing import Union
+
+from Tools import irss_media_tools, sky_removal
+from Tools.agisoft_metashape import process_frames
 from helpers import get_all_files
 
 
-def process_videos(data: Path, video: Path, mask: bool):
-    data = Path(data)
-    video = Path(video)
+def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
+                   use_mask: bool = False, regenerate: bool = True):
+    """
+    Function to process video files from a specified directory for tree reconstruction
 
-    frames_path = data / "frames"
-    mask_path = data / "mask"
-    tools_path = data / "tools"
+    :param data_path: Directory path where data files are located
+    :param video_path: Directory path where video files are located
+    :param use_mask: Boolean flag indicating if sky removal masks should be generated or not
+    :param regenerate: Boolean flag indicating if existing files should be regenerated or not
+    """
+    data_path = Path(data_path)
+    video_path = Path(video_path)
 
-    # %%
-    video_files = get_all_files(video, "*")
+    if not data_path.exists():
+        print(f"The provided path: {data_path} does not exist.")
+        return
+
+    if not video_path.exists():
+        print(f"The provided video path: {video_path} does not exist.")
+        return
+
+    tools_path = data_path / "tools"
+    temp_path = data_path / "temp"
+
+    frames_path = temp_path / "frames"
+    mask_path = temp_path / "masks"
+
+    video_files = get_all_files(video_path, "*")
 
     for file in video_files:
         print(file)
-    # %%
 
-    media_tools = MediaTools(base_dir=tools_path)
-    for video_file in video_files:
-        media_tools.extract_frames(video_file, frames_path, 0.5)
-    # %%
+    if regenerate:
+        # If the directory exists, delete it and all its contents
+        if temp_path.is_dir():
+            shutil.rmtree(temp_path)
 
-    if mask:
-        sky_removal = SkyRemoval(base_dir=tools_path)
-        sky_removal.remove_sky(frames_path, mask_path)
+        if frames_path.is_dir():
+            shutil.rmtree(frames_path)
 
-    # %%
+        if mask_path.is_dir():
+            shutil.rmtree(mask_path)
 
-    process_frames(data, frames_path)
+    temp_path.mkdir(parents=True, exist_ok=True)
+
+    if not frames_path.exists():
+        # Now recreate the directory
+        frames_path.mkdir(parents=True, exist_ok=True)
+
+        media_tools = irss_media_tools.MediaTools(base_dir=tools_path)
+        for video_file in video_files:
+            media_tools.extract_frames(video_file, frames_path, 0.5)
+
+    if use_mask and not mask_path.exists():
+        mask_path.mkdir(parents=True, exist_ok=True)
+
+        sky_removal_obj = sky_removal.SkyRemoval(base_dir=tools_path)
+        sky_removal_obj.remove_sky(frames_path, mask_path)
+
+    process_frames(data_path, frames_path, mask_path, use_mask)
 
 
 if __name__ == '__main__':
-    video_path = "data/videos"
-    data_path = "data"
+    data_dir = Path("data")
+    video_subdir = data_dir / "video"
 
-    process_videos(data_path, video_path, False)
+    process_videos(data_dir, video_subdir, use_mask=True, regenerate=False)
