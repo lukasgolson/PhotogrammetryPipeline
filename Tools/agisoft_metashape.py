@@ -60,85 +60,101 @@ def handle_error(e: Exception):
     print(f"An error occurred: {e}")
 
 
-def process_frames(data: Path, frames: Path, mask_path: Union[Path, None] = None,
-                   use_mask: bool = False, set_size: int = 250):
-    frames = sorted(get_all_files(frames, "*"))
-    if not frames:
-        print("No frames found in the specified path.")
-        return
-
-    doc, chunk, loaded = create_or_load_metashape_project(data)
-
-    if len(chunk.cameras) > 0:
-        print("Chunk already has cameras, skipping adding frames.")
-    else:
-        add_frames_to_chunk(chunk, frames)
-        load_masks(chunk, mask_path, use_mask)
-
-    doc.save()
-
+def matching_stage(doc, chunk, frames: Path, set_size: int = 250):
     total_sets = len(frames) // set_size + (len(frames) % set_size > 0)
     match_window = set_size * 2
 
-    print(f"Total sets: {total_sets}")
-    pbar = tqdm(total=total_sets, desc="Processing", dynamic_ncols=True)
+    print(f"Total sets for matching: {total_sets}")
 
-    for i in range(0, len(frames), set_size):
-        match_list = list()
-        align_list = list()
+    with tqdm(total=total_sets, desc="Matching", dynamic_ncols=True) as pbar:
+        for i in range(0, len(frames), set_size):
+            match_list = list()
 
-        for j, camera in enumerate(chunk.cameras):
-            if i <= j < (i + match_window):
-                match_list.append(camera)
-            if i <= j < (i + set_size):
-                align_list.append(camera)
+            for j, camera in enumerate(chunk.cameras):
+                if i <= j < (i + match_window):
+                    match_list.append(camera)
 
-        print(f"Matching photos {i} to {i + match_window}")
-        try:
-            chunk.matchPhotos(downscale=2, generic_preselection=False,
-                              reference_preselection=True,
-                              reference_preselection_mode=Metashape.ReferencePreselectionMode.ReferencePreselectionSequential)
-        except Exception as e:
-            handle_error(e)
+            print(f"Matching photos {i} to {i + match_window}")
+            try:
+                chunk.matchPhotos(cameras=match_list, downscale=2, generic_preselection=False,
+                                  reference_preselection=True,
+                                  reference_preselection_mode=Metashape.ReferencePreselectionMode.ReferencePreselectionSequential)
+            except Exception as e:
+                handle_error(e)
 
-        print(f"Aligning frames {i} to {i + set_size}")
-        try:
-            chunk.alignCameras(cameras=align_list)
-        except Exception as e:
-            handle_error(e)
+            doc.save()
+            pbar.update(1)
 
-        doc.save()
+    return doc, chunk
 
-        pbar.update(1)
 
-    pbar.close()
+def alignment_stage(doc, chunk, frames: Path, set_size: int = 250):
+    total_sets = len(frames) // set_size + (len(frames) % set_size > 0)
 
-    max_iterations = 10
+    print(f"Total sets for alignment: {total_sets}")
+
+    with tqdm(total=total_sets, desc="Aligning", dynamic_ncols=True) as pbar:
+        for i in range(0, len(frames), set_size):
+            align_list = list()
+
+            for j, camera in enumerate(chunk.cameras):
+                if i <= j < (i + set_size):
+                    align_list.append(camera)
+
+            print(f"Aligning frames {i} to {i + set_size}")
+            try:
+                chunk.alignCameras(cameras=align_list)
+            except Exception as e:
+                handle_error(e)
+
+            doc.save()
+            pbar.update(1)
+
+    return doc, chunk
+
+
+def realignment_phase(doc, chunk, set_size: int = 50, max_iterations: int = 5):
     iteration = 0
 
-    while iteration < max_iterations:
-        print("Optimizing alignment...")
-        chunk.optimizeCameras()
+    def align_cameras(cameras):
+        try:
+            chunk.alignCameras(reset_alignment=True, cameras=cameras)
+            doc.save()
+        except Exception as e:
+            handle_error(e)
 
-        unaligned_cameras = 0
+    while iteration < max_iterations:
+        print(f"Optimizing alignment... Iteration {iteration + 1}")
+        try:
+            chunk.optimizeCameras()
+            doc.save()
+        except Exception as e:
+            handle_error(e)
+
         realign_list = list()
         pbar_realign = tqdm(total=len(chunk.cameras), desc="Realigning", dynamic_ncols=True)
+
         for camera in chunk.cameras:
-            pbar_realign.update()
-            if not camera.transform:
+            if camera.transform is None:
                 realign_list.append(camera)
-                unaligned_cameras += 1
-            if len(realign_list) >= set_size:
-                chunk.alignCameras(reset_alignment=True, cameras=realign_list)
-                realign_list = list()
-                doc.save()
+
+                if len(realign_list) >= set_size:
+                    align_cameras(realign_list)
+                    realign_list.clear()
+
+            elif realign_list:
+                align_cameras(realign_list)
+                realign_list.clear()
+
+            pbar_realign.update()
 
         pbar_realign.close()
 
+        # In case any cameras are left unprocessed
         if realign_list:
-            chunk.alignCameras(reset_alignment=True, cameras=realign_list)
+            align_cameras(realign_list)
 
-        if unaligned_cameras == 0:
+        if not any(camera.transform is None for camera in chunk.cameras):
             break
 
         iteration += 1
@@ -151,6 +167,38 @@ def process_frames(data: Path, frames: Path, mask_path: Union[Path, None] = None
     doc.save()
 
     print("Final optimization...")
-    chunk.optimizeCameras()
+    try:
+        chunk.optimizeCameras()
+        doc.save()
+    except Exception as e:
+        handle_error(e)
+
+
+def process_frames(data: Path, frames: Path, mask_path: Union[Path, None] = None,
+                   use_mask: bool = False, set_size: int = 250):
+    doc, chunk, loaded = create_or_load_metashape_project(data)
+
+    if len(chunk.cameras) > 0:
+        print("Chunk already has cameras, skipping adding frames.")
+    else:
+
+        frames = sorted(get_all_files(frames, "*"))
+        if not frames:
+            print("No frames found in the specified path.")
+            return
+
+        add_frames_to_chunk(chunk, frames)
+        load_masks(chunk, mask_path, use_mask)
 
     doc.save()
+
+    if doc is None or chunk is None:
+        return
+    # doc, chunk = matching_stage(doc, chunk, frames, set_size)
+
+    chunk.matchPhotos(downscale=2, generic_preselection=False,
+                      reference_preselection=True,
+                      reference_preselection_mode=Metashape.ReferencePreselectionMode.ReferencePreselectionSequential)
+
+    alignment_stage(doc, chunk, frames, set_size)
+    realignment_phase(doc, chunk, set_size)
