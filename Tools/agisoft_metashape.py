@@ -1,60 +1,60 @@
-import os
-import sys
+from typing import List, Union
 from pathlib import Path
-from typing import Union
-
-import Metashape
 from tqdm import tqdm
+import Metashape
+import os
 
 from helpers import get_all_files
 
 
-def handle_missing_mask(camera_label):
-    print(f"Missing mask for camera: {camera_label}")
-    pass
-
-
-def handle_error(e):
-    print(f"Error: {e}")
-    pass
-
-
-def process_frames(data: Path, frames: Path, mask_path: Union[Path or None] = None,
-                   use_mask: bool = False, set_size: int = 100, overlap: int = 10):
-
-
-    # Create Metashape project
+def create_metashape_project(data: Path):
     doc = Metashape.Document()
     doc.save(path=str((data / "metashape_project.psx").resolve()))
     doc.read_only = False
 
-    # Create new chunk
     chunk = doc.addChunk()
 
-    # Get and sort all frame paths for current video file
-    frames = sorted(get_all_files(frames, "*"))
+    return doc, chunk
 
-    if len(frames) == 0:
-        print("No frames found")
-        return
 
-    # Add all frames to chunk
+def add_frames_to_chunk(chunk: Metashape.Chunk, frames: List[Path]):
     print(f"Adding {len(frames)} frames to chunk")
     chunk.addPhotos([str(path) for path in frames])
 
-    print("Loading masks")
-    if use_mask:
-        for camera in tqdm(chunk.cameras, desc="Loading masks", dynamic_ncols=True):  # Loading masks progress bar
-            # Build the mask file path
-            mask_file_path = mask_path / (camera.label + '_mask.png')
-            mask_file_path = mask_file_path.resolve()
 
-            # Check if the mask file exists
-            if os.path.isfile(mask_file_path):
-                # Load the mask file
-                camera.mask = Metashape.Mask().load(str(mask_file_path))
-            else:
-                handle_missing_mask(camera.label)
+def load_masks(chunk: Metashape.Chunk, mask_path: Path, use_mask: bool):
+    if not use_mask:
+        return
+
+    print("Loading masks")
+    for camera in tqdm(chunk.cameras, desc="Loading masks", dynamic_ncols=True):
+        mask_file_path = mask_path / (camera.label + '_mask.png')
+        mask_file_path = mask_file_path.resolve()
+
+        if os.path.isfile(mask_file_path):
+            camera.mask = Metashape.Mask().load(str(mask_file_path))
+        else:
+            handle_missing_mask(camera.label)
+
+
+def handle_missing_mask(camera_label: str):
+    print(f"No mask file found for camera: {camera_label}")
+
+
+def handle_error(e: Exception):
+    print(f"An error occurred: {e}")
+
+
+def process_frames(data: Path, frames: Path, mask_path: Union[Path, None] = None,
+                   use_mask: bool = False, set_size: int = 100, overlap: int = 10):
+    frames = sorted(get_all_files(frames, "*"))
+    if not frames:
+        print("No frames found in the specified path.")
+        return
+
+    doc, chunk = create_metashape_project(data)
+    add_frames_to_chunk(chunk, frames)
+    load_masks(chunk, mask_path, use_mask)
 
     total_sets = len(frames) // set_size + (len(frames) % set_size > 0)
     match_window = set_size + overlap
@@ -62,9 +62,7 @@ def process_frames(data: Path, frames: Path, mask_path: Union[Path or None] = No
     print(f"Total sets: {total_sets}")
     pbar = tqdm(total=total_sets, desc="Processing", dynamic_ncols=True)
 
-    # Process the frames
     for i in range(0, len(frames), set_size):
-        # Select only the current matching window for matching photos
         for j, camera in enumerate(chunk.cameras):
             if i <= j < (i + match_window):
                 camera.selected = True
@@ -77,7 +75,6 @@ def process_frames(data: Path, frames: Path, mask_path: Union[Path or None] = No
         except Exception as e:
             handle_error(e)
 
-        # Select only the current set of frames for alignment
         for j, camera in enumerate(chunk.cameras):
             if i <= j < (i + set_size):
                 camera.selected = True
@@ -94,36 +91,29 @@ def process_frames(data: Path, frames: Path, mask_path: Union[Path or None] = No
 
     pbar.close()
 
-    # Optimize the alignment of all cameras
     print("Optimizing alignment...")
     chunk.optimizeCameras()
 
-    # Unselect all cameras
     for camera in chunk.cameras:
         camera.selected = False
 
-    # Counter for selected (i.e., unaligned) cameras
     selected_count = 0
 
-    # Iterate over all cameras
-    for camera in tqdm(chunk.cameras, desc="Aligning unaligned",
-                       dynamic_ncols=True):  # Aligning unaligned cameras progress bar
-        if camera.transform:  # camera is aligned
+    for camera in tqdm(chunk.cameras, desc="Aligning unaligned", dynamic_ncols=True):
+        if camera.transform:
             camera.selected = False
-        else:  # camera is not aligned
+        else:
             camera.selected = True
             selected_count += 1
 
-        # If 100 unaligned cameras are selected, reset and align them
         if selected_count >= 100:
-            chunk.resetAlignment()  # reset alignment
-            chunk.alignCameras()  # align selected cameras
-            selected_count = 0  # reset counter
+            chunk.resetAlignment()
+            chunk.alignCameras()
+            selected_count = 0
 
-    # After going through all cameras, align any remaining unaligned cameras
     if selected_count > 0:
-        chunk.resetAlignment()  # reset alignment
-        chunk.alignCameras()  # align selected cameras
+        chunk.resetAlignment()
+        chunk.alignCameras()
 
     print("Final optimization...")
     chunk.optimizeCameras()
