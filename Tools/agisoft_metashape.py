@@ -115,13 +115,17 @@ def process_frames(data: Path, frames: Path, mask_path: Union[Path, None] = None
     chunk.optimizeCameras()
 
     realign_list = list()
-    for camera in tqdm(chunk.cameras, desc="Aligning unaligned", dynamic_ncols=True):
+    pbar_realign = tqdm(total=len(chunk.cameras), desc="Realigning", dynamic_ncols=True)
+    for camera in chunk.cameras:
+        pbar_realign.update()
         if not camera.transform:
             realign_list.append(camera)
             if len(realign_list) >= 100:
                 chunk.alignCameras(reset_alignment=True, cameras=realign_list)
                 realign_list = list()
                 doc.save()
+
+    pbar_realign.close()
 
     if realign_list:
         chunk.alignCameras(reset_alignment=True, cameras=realign_list)
@@ -132,4 +136,3 @@ def process_frames(data: Path, frames: Path, mask_path: Union[Path, None] = None
     chunk.optimizeCameras()
 
     doc.save()
-
