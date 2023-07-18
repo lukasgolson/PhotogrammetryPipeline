@@ -7,6 +7,7 @@ https://www.agisoft.com/downloads/installer/ into the `bin` folder.
 2) Run the following command in the terminal: ```python setup.py```
 """
 import shutil
+import time
 from pathlib import Path
 
 from typing import Union
@@ -26,6 +27,9 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
     :param use_mask: Boolean flag indicating if sky removal masks should be generated or not
     :param regenerate: Boolean flag indicating if existing files should be regenerated or not
     """
+
+    start_time = time.time()
+
     data_path = Path(data_path)
     video_path = Path(video_path)
 
@@ -76,6 +80,10 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
         sky_removal_obj.remove_sky(frames_path, mask_path)
 
     process_frames(data_path, frames_path, mask_path, use_mask)
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Elapsed execution time: {elapsed_time}")
 
 
 if __name__ == '__main__':

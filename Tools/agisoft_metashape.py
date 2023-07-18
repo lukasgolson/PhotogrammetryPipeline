@@ -1,5 +1,8 @@
 from typing import List, Union
 from pathlib import Path
+
+import numpy as np
+from Metashape import Document, Chunk, Camera
 from tqdm import tqdm
 import Metashape
 import os
@@ -14,6 +17,8 @@ def create_or_load_metashape_project(data: Path):
     # Create a Metashape document
     doc = Metashape.Document()
     loaded = False
+
+    doc.read_only = False
 
     # If the project file already exists, load it
     if project_path.exists():
@@ -57,11 +62,18 @@ def handle_error(e: Exception):
     print(f"An error occurred: {e}")
 
 
-def matching_stage(doc, chunk, number_of_frames: int, set_size: int = 250, overlap_ratio: float = 0.3):
+def optimize_cameras(chunk: Chunk):
+    chunk.optimizeCameras(fit_f=True, fit_cx=True, fit_cy=True,
+                          fit_k1=True, fit_k2=True, fit_k3=True, fit_k4=True)
+
+
+def match_photos(chunk, set_size: int = 250, overlap_ratio: float = 0.3):
+    number_of_cameras = len(chunk.cameras)
+
     # Calculate the total number of sets by floor dividing the total number of frames by the set size.
     # If there is a remainder, our modulus will be greater than 0, making the bool True.
     # bool True = 1.
-    total_sets = (number_of_frames // set_size) + (number_of_frames % set_size > 0)
+    total_sets = (number_of_cameras // set_size) + (number_of_cameras % set_size > 0)
 
     # Calculate the overlap between sets by multiplying the set size by the overlap ratio.
     overlap = int(set_size * overlap_ratio)
@@ -69,26 +81,28 @@ def matching_stage(doc, chunk, number_of_frames: int, set_size: int = 250, overl
     print(f"Total sets for matching: {total_sets}")
 
     with tqdm(total=total_sets, desc="Matching", dynamic_ncols=True) as pbar:
-        for i in range(0, number_of_frames, set_size):
+        for i in range(0, number_of_cameras, set_size):
             match_list = list()
 
             start_index = max(0, i - overlap)
-            end_index = min(number_of_frames, i + set_size + overlap)
+            end_index = min(number_of_cameras, i + set_size + overlap)
 
             for j, camera in enumerate(chunk.cameras[start_index:end_index]):
                 match_list.append(camera)
 
             print(f"Matching photos {start_index} to {end_index}")
             try:
-                chunk.matchPhotos(cameras=match_list, downscale=2, generic_preselection=False)
+                chunk.matchPhotos(cameras=match_list, downscale=2, generic_preselection=False,
+                                  reference_preselection=False, keep_keypoints=True, keypoint_limit=60000)
             except Exception as e:
                 handle_error(e)
 
-            doc.save()
             pbar.update(1)
 
 
-def alignment_stage(doc, chunk, number_of_frames: int, set_size: int = 250):
+def align_cameras(chunk, set_size: int = 250):
+    number_of_frames = len(chunk.cameras)
+
     total_sets = number_of_frames // set_size + (number_of_frames % set_size > 0)
 
     print(f"Total sets for alignment: {total_sets}")
@@ -107,75 +121,161 @@ def alignment_stage(doc, chunk, number_of_frames: int, set_size: int = 250):
             except Exception as e:
                 handle_error(e)
 
-            doc.save()
             pbar.update(1)
 
-    return doc, chunk
 
+def realign_cameras(doc: Document, chunk: Chunk, batch_size: int = 50, max_iterations: int = 5,
+                    max_error: int = 1.1) -> None:
+    """
+    Tries to realign cameras in the given chunk by attempting to optimize camera alignment multiple times. It stops if the process isn't improving or if it reaches a maximum iteration count.
 
-def realignment_phase(doc, chunk, set_size: int = 50, max_iterations: int = 5):
-    iteration = 0
+    Args:
+        doc (Document): The Metashape Document.
+        chunk (Chunk): The Metashape Chunk.
+        batch_size (int, optional): The number of cameras to be realigned per iteration. Defaults to 50.
+        max_iterations (int, optional): Maximum number of iterations to perform. Defaults to 5.
+        max_error (int, optional): Maximum allowed error in camera alignment. Defaults to 0.1.
+            """
 
-    def align_cameras(cameras):
+    if max_error < 1:
+        print(
+            f"realign_cameras called with max_error {max_error}. "
+            f"Max error must be greater than 1. Setting to {max_error + 1}")
+        max_error = max_error + 1
+
+    def iteratively_align(cameras: List[Camera]) -> None:
+        for camera in cameras:
+            camera.transform = None
+
         try:
-            chunk.alignCameras(reset_alignment=True, cameras=cameras)
-            doc.save()
-        except Exception as e:
-            handle_error(e)
+            chunk.alignCameras(cameras=cameras)
+        except Exception as error:
+            handle_error(error)
+
+    iteration = 0
+    stale_iterations = 0
+
+    pbar_iteration = tqdm(total=max_iterations, desc="Realignment Iterations", dynamic_ncols=True)
+
+    num_unaligned_cameras_start = sum(camera.transform is None for camera in chunk.cameras)
+    initial_alignment = num_unaligned_cameras_start
+    total_cameras = len(chunk.cameras)
 
     while iteration < max_iterations:
         print(f"Optimizing alignment... Iteration {iteration + 1}")
-        try:
-            chunk.optimizeCameras()
-            doc.save()
-        except Exception as e:
-            handle_error(e)
 
-        realign_list = list()
-        pbar_realign = tqdm(total=len(chunk.cameras), desc="Realigning", dynamic_ncols=True)
-
+        realign_batch = []
         for camera in chunk.cameras:
             if camera.transform is None:
-                realign_list.append(camera)
+                realign_batch.append(camera)
+                if len(realign_batch) == batch_size:  # if the batch size is reached, align the cameras
+                    iteratively_align(realign_batch)
+                    realign_batch = []  # clear the batch
+            elif realign_batch:  # if we hit an aligned camera and have unaligned cameras in the batch
+                iteratively_align(realign_batch)
+                realign_batch = []  # clear the batch
 
-                if len(realign_list) >= set_size:
-                    align_cameras(realign_list)
-                    realign_list.clear()
+        if realign_batch:  # align any remaining unaligned cameras
+            iteratively_align(realign_batch)
 
-            elif realign_list:
-                align_cameras(realign_list)
-                realign_list.clear()
+        num_unaligned_cameras_end = sum(camera.transform is None for camera in chunk.cameras)
 
-            pbar_realign.update()
+        if num_unaligned_cameras_end == num_unaligned_cameras_start:
+            stale_iterations += 1
+        else:
+            stale_iterations = 0
 
-        pbar_realign.close()
-
-        # In case any cameras are left unprocessed
-        if realign_list:
-            align_cameras(realign_list)
-
-        if not any(camera.transform is None for camera in chunk.cameras):
+        if stale_iterations > 1:
             break
 
+        num_unaligned_cameras_start = num_unaligned_cameras_end
         iteration += 1
+        pbar_iteration.update()
+
+    pbar_iteration.close()
 
     if iteration == max_iterations:
         print(f"Stopped realignment after {max_iterations} iterations.")
     else:
-        print(f"All cameras realigned after {iteration} iterations.")
+        print(f"All cameras realaligned after {iteration} iterations.")
+
+    print("Final optimization...")
+
+    try:
+        optimize_cameras(chunk)
+    except Exception as error:
+        handle_error(error)
 
     doc.save()
 
-    print("Final optimization...")
-    try:
-        chunk.optimizeCameras()
-        doc.save()
-    except Exception as e:
-        handle_error(e)
+    final_alignment = sum(camera.transform is None for camera in chunk.cameras)
+
+    improvement = (final_alignment - initial_alignment) / total_cameras * 100
+
+    print(f"Cameras realigned. "
+          f"Initial alignment: {initial_alignment}."
+          f"Final alignment: {final_alignment}."
+          f"Improvement {improvement:.2f}% ")
+
+
+def remove_low_quality_cameras(chunk: Chunk, threshold: float = 0.5) -> None:
+    chunk.analyzeImages()
+
+    cameras_to_remove = []
+
+    # Loop through cameras
+    for camera in tqdm(chunk.cameras, desc="Scanning for low quality cameras", dynamic_ncols=True):
+        quality = float(camera.meta['Image/Quality'])
+        if quality < threshold:
+            cameras_to_remove.append(camera)
+
+    chunk.remove(cameras_to_remove)
+
+
+def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, lower_percentile: float = 10, iterations: int = 10) -> None:
+    """
+    Iteratively removes points with reprojection accuracy higher than the calculated threshold.
+    """
+
+    points = chunk.tie_points.points
+    f = Metashape.TiePoints.Filter()
+
+    # Initialize filter for projection accuracy
+    f.init(chunk, criterion=Metashape.TiePoints.Filter.ProjectionAccuracy)
+
+    # Calculate initial and final thresholds based on given percentiles
+    accuracies = [p.projection_accuracy for p in points if p.valid]
+    accuracy_threshold = np.percentile(accuracies, upper_percentile)
+    final_threshold = np.percentile(accuracies, lower_percentile)
+
+    # Calculate decrement based on the difference between initial and final thresholds
+    decrement = (accuracy_threshold - final_threshold) / iterations
+
+    for _ in range(iterations):
+        # Select points based on the current threshold
+        f.selectPoints(accuracy_threshold)
+
+        # Calculate number of selected points
+        nselected = len([True for point in points if point.valid and point.selected])
+
+        if nselected == 0:
+            print("No more points with high reprojection accuracy.")
+            break
+
+        # Remove selected points
+        chunk.point_cloud.removeSelectedPoints()
+
+        # Lower the threshold for the next iteration
+        accuracy_threshold -= decrement
+
+        optimize_cameras(chunk)
+
+
 
 
 def process_frames(data: Path, frames: Path, mask_path: Union[Path, None] = None,
-                   use_mask: bool = False, set_size: int = 250):
+                   use_mask: bool = False, set_size: int = 250, match: bool = True, align: bool = True,
+                   realign: bool = True):
     doc, chunk, loaded = create_or_load_metashape_project(data)
 
     if len(chunk.cameras) > 0:
@@ -196,11 +296,29 @@ def process_frames(data: Path, frames: Path, mask_path: Union[Path, None] = None
     if doc is None or chunk is None:
         return
 
-    matching_stage(doc, chunk, frames, set_size)
+    if True:
+        remove_low_quality_cameras(chunk)
 
-    # chunk.matchPhotos(downscale=2, generic_preselection=False, )
+        doc.save()
 
-    alignment_stage(doc, chunk, len(frame_list), set_size)
-    realignment_phase(doc, chunk, set_size)
+        match_photos(chunk, set_size)
+
+        doc.save()
+
+        align_cameras(chunk, set_size)
+
+        doc.save()
+
+    optimize_alignment(chunk)
+
+    doc.save()
+
+    realign_cameras(doc, chunk, set_size)
+
+    doc.save()
+
+    optimize_alignment(chunk)
+
+    doc.save()
 
     print("Done!")
