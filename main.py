@@ -86,8 +86,10 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
     print(f"Elapsed execution time: {elapsed_time}")
 
 
+
 if __name__ == '__main__':
     data_dir = Path("data")
     video_subdir = data_dir / "video"
 
     process_videos(data_dir, video_subdir, use_mask=True, regenerate=False)
+

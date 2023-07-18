@@ -44,14 +44,13 @@ def add_frames_to_chunk(chunk: Metashape.Chunk, frames: List[Path]):
 
 def load_masks(chunk: Metashape.Chunk, mask_path: Path):
     print("Loading masks")
-    for camera in tqdm(chunk.cameras, desc="Loading masks", dynamic_ncols=True):
-        mask_file_path = mask_path / (camera.label + '_mask.png')
-        mask_file_path = mask_file_path.resolve()
 
-        if os.path.isfile(mask_file_path):
-            camera.mask = Metashape.Mask().load(str(mask_file_path))
-        else:
-            handle_missing_mask(camera.label)
+    mask_file_path = str(mask_path.resolve()) + "/{filename}_mask.png"
+
+    try:
+        chunk.generateMasks(path=mask_file_path, masking_mode=Metashape.MaskingModeFile)
+    except Exception as e:
+        print(f"An error occurred while generating masks: {e}. Continuing...")
 
 
 def handle_missing_mask(camera_label: str):
@@ -63,8 +62,7 @@ def handle_error(e: Exception):
 
 
 def optimize_cameras(chunk: Chunk):
-    chunk.optimizeCameras(fit_f=True, fit_cx=True, fit_cy=True,
-                          fit_k1=True, fit_k2=True, fit_k3=True, fit_k4=True)
+    chunk.optimizeCameras(fit_corrections=True)
 
 
 def match_photos(chunk, set_size: int = 250, overlap_ratio: float = 0.3):
@@ -93,11 +91,15 @@ def match_photos(chunk, set_size: int = 250, overlap_ratio: float = 0.3):
             print(f"Matching photos {start_index} to {end_index}")
             try:
                 chunk.matchPhotos(cameras=match_list, downscale=2, generic_preselection=False,
-                                  reference_preselection=False, keep_keypoints=True, keypoint_limit=60000)
+                                  reference_preselection=False, keep_keypoints=True, keypoint_limit=40000,
+                                  tiepoint_limit=4000, filter_mask=True)
             except Exception as e:
                 handle_error(e)
 
             pbar.update(1)
+
+    chunk.matchPhotos(cameras=chunk.cameras, downscale=1, generic_preselection=True, keep_keypoints=True,
+                      keypoint_limit=80000, tiepoint_limit=8000, filter_mask=True)
 
 
 def align_cameras(chunk, set_size: int = 250):
@@ -201,11 +203,6 @@ def realign_cameras(doc: Document, chunk: Chunk, batch_size: int = 50, max_itera
 
     print("Final optimization...")
 
-    try:
-        optimize_cameras(chunk)
-    except Exception as error:
-        handle_error(error)
-
     doc.save()
 
     final_alignment = sum(camera.transform is None for camera in chunk.cameras)
@@ -219,7 +216,7 @@ def realign_cameras(doc: Document, chunk: Chunk, batch_size: int = 50, max_itera
 
 
 def remove_low_quality_cameras(chunk: Chunk, threshold: float = 0.5) -> None:
-    chunk.analyzeImages()
+    chunk.analyzeImages(filter_mask=True)
 
     cameras_to_remove = []
 
@@ -232,45 +229,46 @@ def remove_low_quality_cameras(chunk: Chunk, threshold: float = 0.5) -> None:
     chunk.remove(cameras_to_remove)
 
 
-def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, lower_percentile: float = 10, iterations: int = 10) -> None:
+def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, lower_percentile: float = 10,
+                       delta_ratio: float = 0.01, iterations: int = 10) -> None:
     """
-    Iteratively removes points with reprojection accuracy higher than the calculated threshold.
+    Iteratively optimizes the alignment of tie points in a chunk by removing points with high reprojection error
+    and re-adjusting camera positions until the change in mean reprojection error falls below a certain threshold.
     """
 
     points = chunk.tie_points.points
-    f = Metashape.TiePoints.Filter()
+    filter = Metashape.TiePoints.Filter()
 
-    # Initialize filter for projection accuracy
-    f.init(chunk, criterion=Metashape.TiePoints.Filter.ProjectionAccuracy)
+    filter.init(chunk, criterion=Metashape.TiePoints.Filter.ReprojectionError)
+
+    reprojection_errors = [filter.values[i] for i in range(len(points)) if points[i].valid]
 
     # Calculate initial and final thresholds based on given percentiles
-    accuracies = [p.projection_accuracy for p in points if p.valid]
-    accuracy_threshold = np.percentile(accuracies, upper_percentile)
-    final_threshold = np.percentile(accuracies, lower_percentile)
+    initial_threshold = np.percentile(reprojection_errors, upper_percentile)
+    final_threshold = np.percentile(reprojection_errors, lower_percentile)
 
     # Calculate decrement based on the difference between initial and final thresholds
-    decrement = (accuracy_threshold - final_threshold) / iterations
+    decrement = (initial_threshold - final_threshold) / iterations
 
-    for _ in range(iterations):
-        # Select points based on the current threshold
-        f.selectPoints(accuracy_threshold)
+    old_mean_error = np.mean(reprojection_errors)
 
-        # Calculate number of selected points
-        nselected = len([True for point in points if point.valid and point.selected])
+    # Calculate the error delta based on the initial mean error
+    error_delta = old_mean_error * delta_ratio
 
-        if nselected == 0:
-            print("No more points with high reprojection accuracy.")
-            break
+    for _ in tqdm(range(iterations), desc="Optimizing alignment"):
+        filter.selectPoints(initial_threshold)
+        chunk.tie_points.removeSelectedPoints()
 
-        # Remove selected points
-        chunk.point_cloud.removeSelectedPoints()
-
-        # Lower the threshold for the next iteration
-        accuracy_threshold -= decrement
-
+        initial_threshold -= decrement
         optimize_cameras(chunk)
 
+        reprojection_errors = [filter.values[i] for i, point in enumerate(points) if point.valid]
+        new_mean_error = np.mean(reprojection_errors)
 
+        if abs(new_mean_error - old_mean_error) < error_delta:
+            break
+
+        old_mean_error = new_mean_error
 
 
 def process_frames(data: Path, frames: Path, mask_path: Union[Path, None] = None,
@@ -296,22 +294,17 @@ def process_frames(data: Path, frames: Path, mask_path: Union[Path, None] = None
     if doc is None or chunk is None:
         return
 
-    if True:
-        remove_low_quality_cameras(chunk)
-
-        doc.save()
-
-        match_photos(chunk, set_size)
-
-        doc.save()
-
-        align_cameras(chunk, set_size)
-
-        doc.save()
-
-    optimize_alignment(chunk)
+    remove_low_quality_cameras(chunk)
 
     doc.save()
+
+    match_photos(chunk, set_size)
+
+    doc.save()
+
+    align_cameras(chunk, set_size)
+
+    optimize_alignment(chunk)
 
     realign_cameras(doc, chunk, set_size)
 
