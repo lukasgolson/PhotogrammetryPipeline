@@ -71,7 +71,7 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
 
         media_tools = irss_media_tools.MediaTools(base_dir=tools_path)
         for video_file in video_files:
-            media_tools.extract_frames(video_file, frames_path, 0.5)
+            media_tools.extract_frames(video_file, frames_path, 0.75)  # 0.75 = 75% of the original video or from 60 fps to 15 fps
 
     if use_mask and not mask_path.exists():
         mask_path.mkdir(parents=True, exist_ok=True)
@@ -86,10 +86,8 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
     print(f"Elapsed execution time: {elapsed_time}")
 
 
-
 if __name__ == '__main__':
     data_dir = Path("data")
     video_subdir = data_dir / "video"
 
     process_videos(data_dir, video_subdir, use_mask=True, regenerate=False)
-

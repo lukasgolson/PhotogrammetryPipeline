@@ -68,6 +68,10 @@ def optimize_cameras(chunk: Chunk):
 def match_photos(chunk, set_size: int = 250, overlap_ratio: float = 0.3):
     number_of_cameras = len(chunk.cameras)
 
+    print("Initial matching of photos at low resolution.")
+    chunk.matchPhotos(cameras=chunk.cameras, downscale=4, generic_preselection=True, keep_keypoints=True,
+                      keypoint_limit=40000, tiepoint_limit=4000, filter_mask=True)
+
     # Calculate the total number of sets by floor dividing the total number of frames by the set size.
     # If there is a remainder, our modulus will be greater than 0, making the bool True.
     # bool True = 1.
@@ -90,16 +94,13 @@ def match_photos(chunk, set_size: int = 250, overlap_ratio: float = 0.3):
 
             print(f"Matching photos {start_index} to {end_index}")
             try:
-                chunk.matchPhotos(cameras=match_list, downscale=2, generic_preselection=False,
-                                  reference_preselection=False, keep_keypoints=True, keypoint_limit=40000,
-                                  tiepoint_limit=4000, filter_mask=True)
+                chunk.matchPhotos(cameras=match_list, downscale=1, generic_preselection=False,
+                                  reference_preselection=False, keep_keypoints=True, keypoint_limit=80000,
+                                  tiepoint_limit=8000, filter_mask=True)
             except Exception as e:
                 handle_error(e)
 
             pbar.update(1)
-
-    chunk.matchPhotos(cameras=chunk.cameras, downscale=1, generic_preselection=True, keep_keypoints=True,
-                      keypoint_limit=80000, tiepoint_limit=8000, filter_mask=True)
 
 
 def align_cameras(chunk, set_size: int = 250):
@@ -226,6 +227,7 @@ def remove_low_quality_cameras(chunk: Chunk, threshold: float = 0.5) -> None:
         if quality < threshold:
             cameras_to_remove.append(camera)
 
+    print(f"Removing {len(cameras_to_remove)} low quality cameras")
     chunk.remove(cameras_to_remove)
 
 
@@ -241,7 +243,7 @@ def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, low
 
     filter.init(chunk, criterion=Metashape.TiePoints.Filter.ReprojectionError)
 
-    reprojection_errors = [filter.values[i] for i in range(len(points)) if points[i].valid]
+    reprojection_errors = [filter.values[i] for i, point in enumerate(points) if point.valid]
 
     # Calculate initial and final thresholds based on given percentiles
     initial_threshold = np.percentile(reprojection_errors, upper_percentile)
