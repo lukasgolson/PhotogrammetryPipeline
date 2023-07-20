@@ -243,6 +243,11 @@ def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, low
         old_mean_error = new_mean_error
 
 
+def save(doc: Metashape.Document):
+    if not doc.read_only:
+        doc.save()
+
+
 def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path, None] = None,
                    use_mask: bool = False, set_size: int = None, match: bool = True, align: bool = True,
                    realign: bool = True):
@@ -261,17 +266,18 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
     if use_mask:
         load_masks(chunk, mask_path)
 
-    doc.save()
+    save(doc)
 
     if doc is None or chunk is None:
         return
 
     remove_low_quality_cameras(chunk)
 
-    doc.save()
+    save(doc)
 
     if set_size is None:
         set_size = int(len(chunk.cameras) * 0.1)
+
 
     print("Initial matching of photos at low resolution.")
     chunk.matchPhotos(cameras=chunk.cameras, downscale=1, generic_preselection=True, reference_preselection=False,
@@ -280,7 +286,7 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
 
     chunk.alignCameras(cameras=chunk.cameras, adaptive_fitting=True, reset_alignment=True)
 
-    doc.save()
+    save(doc)
 
     realign_cameras(chunk, set_size)
 
@@ -288,19 +294,19 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
 
     realign_cameras(chunk, set_size)
 
-    doc.save()
+    save(doc)
 
-    chunk.buildDepthMaps(downscale=1, filter_mode=Metashape.AggressiveFiltering, max_neighbors=100,
+    chunk.buildDepthMaps(downscale=1, filter_mode=Metashape.ModerateFiltering, max_neighbors=100,
                          cameras=chunk.cameras)
 
-    doc.save()
+    save(doc)
 
-    chunk.buildPointCloud(downscale=1, source_data=Metashape.DataSource.DepthMapsData, keep_depth=True)
+    chunk.buildPointCloud(source_data=Metashape.DataSource.DepthMapsData, keep_depth=True)
 
-    doc.save()
+    save(doc)
 
-    chunk.exportPointCloud(export.resolve(), source_data=Metashape.DataSource.DepthMapsData)
+    chunk.exportPointCloud(str(export.resolve()), source_data=Metashape.DataSource.PointCloudData)
 
-    doc.save()
+    save(doc)
 
     print("Done!")
