@@ -71,7 +71,8 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
 
         media_tools = irss_media_tools.MediaTools(base_dir=tools_path)
         for video_file in video_files:
-            media_tools.extract_frames(video_file, frames_path, 0.75)  # 0.75 = 75% of the original video or from 60 fps to 15 fps
+            media_tools.extract_frames(video_file,
+                                       frames_path)  # 0.75 = 75% of the original video or from 60 fps to 15 fps
 
     if use_mask and not mask_path.exists():
         mask_path.mkdir(parents=True, exist_ok=True)
@@ -79,7 +80,9 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
         sky_removal_obj = sky_removal.SkyRemoval(base_dir=tools_path)
         sky_removal_obj.remove_sky(frames_path, mask_path)
 
-    process_frames(data_path, frames_path, mask_path, use_mask)
+    export_path = data_path / "export" / "pointcloud.ply"
+
+    process_frames(data_path, frames_path, export_path, mask_path, use_mask)
 
     end_time = time.time()
     elapsed_time = end_time - start_time

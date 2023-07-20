@@ -43,11 +43,19 @@ class MediaTools:
         """
         print(f"Extracting frames from video at path: {video_path}")
 
-        command = f'extract --input {video_path.resolve()} --output {output_path.resolve()} --drop {drop}'
+        command = f'extract --input "{video_path.resolve()}" ' \
+                  f'--output "{output_path.resolve()}" ' \
+                  f'--drop {drop} --format png'
 
         try:
             exit_code = self.tool.run_command(command)
-            print(f"Extracting frames from video at path: {video_path} completed with exit code: {exit_code}")
+
+            if exit_code != 0:
+                raise Exception(f"Failed to extract frames from video at path: {video_path}")
+            else:
+                print(f"Extracting frames from video at path: {video_path} completed with exit code: {exit_code}")
+
+
         except Exception as e:
             print(f"Exception occurred while extracting frames from video at path: {video_path}. Details: {e}")
             raise e

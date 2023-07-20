@@ -119,9 +119,16 @@ class DownloadableTool:
             cmd = f'python {self.calculate_path().resolve()} {cmd}'
         else:
             cmd = f'{self.calculate_path().resolve()} {cmd}'
-        print(f"Running command: {cmd}")
 
-        with subprocess.Popen(shlex.split(cmd, posix=False), stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1,
+        commandArgs = shlex.split(cmd, posix=False)
+
+        for i, arg in enumerate(commandArgs):
+            if arg.startswith('"') and arg.endswith('"'):
+                commandArgs[i] = arg[1:-1]
+
+        print(f"Running command: {commandArgs}")
+
+        with subprocess.Popen(commandArgs, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1,
                               universal_newlines=True) as p:
             while True:
                 line = p.stdout.readline()
