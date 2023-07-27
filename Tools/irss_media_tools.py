@@ -4,7 +4,15 @@ Python Bindings for IRSSMediaTools.
 from pathlib import Path
 import subprocess
 
+from strenum import StrEnum
+
 from Tools import downloadable_tool
+
+
+class ModelExecutionEngines(StrEnum):
+    CUDA = "cuda"
+    CPU = "cpu"
+    TENSORRT = "tensorRT"
 
 
 class MediaTools:
@@ -58,4 +66,26 @@ class MediaTools:
 
         except Exception as e:
             print(f"Exception occurred while extracting frames from video at path: {video_path}. Details: {e}")
+            raise e
+
+    def mask_sky(self, images: Path, output_path: Path,
+                 engine: ModelExecutionEngines = ModelExecutionEngines.CPU) -> None:
+
+        print(f"Masking sky in images from path: {images}")
+
+        command = f'mask_sky --input "{images.resolve()}" ' \
+                  f'--output "{output_path.resolve()}" ' \
+                  f'--engine {engine.value}'
+
+        try:
+            exit_code = self.tool.run_command(command)
+
+            if exit_code != 0:
+                raise Exception(f"Failed to mask images from path: {images}")
+            else:
+                print(f"Masking images from path: {images} completed with exit code: {exit_code}")
+
+
+        except Exception as e:
+            print(f"Exception occurred while masking images from path: {images}. Details: {e}")
             raise e

@@ -14,6 +14,7 @@ from typing import Union
 
 from Tools import irss_media_tools, sky_removal
 from Tools.agisoft_metashape import process_frames
+from Tools.irss_media_tools import ModelExecutionEngines
 from helpers import get_all_files
 
 
@@ -42,7 +43,8 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
         return
 
     tools_path = data_path / "tools"
-    temp_path = data_path / "temp"
+    temp_path = data_path / "tmp"
+    export_path = data_path / "export"
 
     frames_path = temp_path / "frames"
     mask_path = temp_path / "masks"
@@ -65,22 +67,25 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
 
     temp_path.mkdir(parents=True, exist_ok=True)
 
+    media_tools = irss_media_tools.MediaTools(base_dir=tools_path)
+
     if not frames_path.exists():
         # Now recreate the directory
         frames_path.mkdir(parents=True, exist_ok=True)
 
-        media_tools = irss_media_tools.MediaTools(base_dir=tools_path)
         for video_file in video_files:
             media_tools.extract_frames(video_file,
-                                       frames_path)  # 0.75 = 75% of the original video or from 60 fps to 15 fps
+                                       frames_path, 0.9)  # 0.75 = 75% of the original video or from 60 fps to 15 fps
 
     if use_mask and not mask_path.exists():
         mask_path.mkdir(parents=True, exist_ok=True)
 
-        sky_removal_obj = sky_removal.SkyRemoval(base_dir=tools_path)
-        sky_removal_obj.remove_sky(frames_path, mask_path)
+        media_tools.mask_sky(frames_path, mask_path, ModelExecutionEngines.CUDA)
 
-    export_path = data_path / "export" / "pointcloud.ply"
+        # sky_removal_obj = sky_removal.SkyRemoval(base_dir=tools_path)
+        # sky_removal_obj.remove_sky(frames_path, mask_path)
+
+    export_path.mkdir(parents=True, exist_ok=True)
 
     process_frames(data_path, frames_path, export_path, mask_path, use_mask)
 
@@ -90,7 +95,7 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
 
 
 if __name__ == '__main__':
-    data_dir = Path("data")
-    video_subdir = data_dir / "video"
+    data_dir = Path("Data")
+    video_subdir = data_dir / Path("video")
 
     process_videos(data_dir, video_subdir, use_mask=True, regenerate=False)

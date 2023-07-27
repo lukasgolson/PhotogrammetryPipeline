@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Union
 from pathlib import Path
 
@@ -8,6 +9,13 @@ import Metashape
 import os
 
 from helpers import get_all_files
+
+
+class TqdmUpdate(tqdm):
+    def update_to(self, p=1):
+        self.update(p - self.n)  # Provide here progress increment
+        if p >= self.total:  # Check if the progress is complete
+            self.close()
 
 
 def create_or_load_metashape_project(data: Path):
@@ -248,6 +256,10 @@ def save(doc: Metashape.Document):
         doc.save()
 
 
+def reduce_cameras(chunk) -> None:
+    return None
+
+
 def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path, None] = None,
                    use_mask: bool = False, set_size: int = None, match: bool = True, align: bool = True,
                    realign: bool = True):
@@ -278,7 +290,6 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
     if set_size is None:
         set_size = int(len(chunk.cameras) * 0.1)
 
-
     print("Initial matching of photos at low resolution.")
     chunk.matchPhotos(cameras=chunk.cameras, downscale=1, generic_preselection=True, reference_preselection=False,
                       reset_matches=True, keep_keypoints=True,
@@ -296,16 +307,22 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
 
     save(doc)
 
-    chunk.buildDepthMaps(downscale=1, filter_mode=Metashape.ModerateFiltering, max_neighbors=100,
-                         cameras=chunk.cameras)
+
+    build_depths_progress_bar = TqdmUpdate(total=100, desc="Building depth maps")
+
+    chunk.buildDepthMaps(downscale=2, filter_mode=Metashape.ModerateFiltering, max_neighbors=100,
+                         cameras=chunk.cameras, progress=build_depths_progress_bar)
 
     save(doc)
 
-    chunk.buildPointCloud(source_data=Metashape.DataSource.DepthMapsData, keep_depth=True)
+    build_point_cloud_progress_bar = TqdmUpdate(total=100, desc="Building point cloud")
+
+    chunk.buildPointCloud(source_data=Metashape.DataSource.DepthMapsData, keep_depth=True,
+                          progress=build_point_cloud_progress_bar)
 
     save(doc)
 
-    chunk.exportPointCloud(str(export.resolve()), source_data=Metashape.DataSource.PointCloudData)
+    chunk.exportPointCloud(str((export / "pointcloud.ply").resolve()), source_data=Metashape.DataSource.PointCloudData)
 
     save(doc)
 
