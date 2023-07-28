@@ -4,6 +4,7 @@ A framework for managing and executing downloadable tools.
 
 import platform
 import shlex
+import string
 import subprocess
 import sys
 import zipfile
@@ -65,7 +66,7 @@ class DownloadableTool:
         self.tool_directory.mkdir(parents=True, exist_ok=True)
         print(f"Installing {self.tool_name}...")
         url = self.get_platform_data()['url']
-        self._download_and_extract_zip(url)
+        self._download(url)
 
         if self.python:
 
@@ -80,11 +81,11 @@ class DownloadableTool:
 
         print(f"{self.tool_name} installed.")
 
-    def _download_and_extract_zip(self, url: str) -> None:
+    def _download(self, url: str, extract: bool = True) -> None:
         """
         Downloads a zip file from the given URL and extracts it.
         """
-        local_path = self.tool_directory / "download.zip"
+        local_path = self.tool_directory / "download.tmp"
 
         response = requests.get(url, stream=True)
         total_size = int(response.headers.get('content-length', 0))

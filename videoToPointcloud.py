@@ -12,7 +12,7 @@ from pathlib import Path
 
 from typing import Union
 
-from Tools import irss_media_tools, sky_removal
+from Tools import irss_media_tools
 from Tools.agisoft_metashape import process_frames
 from Tools.irss_media_tools import ModelExecutionEngines
 from helpers import get_all_files

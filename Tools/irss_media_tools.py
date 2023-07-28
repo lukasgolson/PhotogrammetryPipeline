@@ -1,18 +1,10 @@
-""""
+"""
 Python Bindings for IRSSMediaTools.
 """
+
 from pathlib import Path
-import subprocess
 
-from strenum import StrEnum
-
-from Tools import downloadable_tool
-
-
-class ModelExecutionEngines(StrEnum):
-    CUDA = "cuda"
-    CPU = "cpu"
-    TENSORRT = "tensorRT"
+from Tools import downloadable_tool, ModelExecutionEngines
 
 
 class MediaTools:

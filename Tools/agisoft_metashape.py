@@ -1,12 +1,10 @@
-from datetime import datetime
-from typing import List, Union
 from pathlib import Path
+from typing import List, Union
 
-import numpy as np
-from Metashape import Document, Chunk, Camera
-from tqdm import tqdm
 import Metashape
-import os
+import numpy as np
+from Metashape import Chunk, Camera
+from tqdm import tqdm
 
 from helpers import get_all_files
 
@@ -32,7 +30,7 @@ def create_or_load_metashape_project(data: Path):
     if project_path.exists():
         print("Loading existing project")
         doc.open(str(project_path))
-        # Assuming that you want to work with the first chunk in the project
+        # Assuming that we'd want to work with the first chunk in the project
         chunk = doc.chunk if len(doc.chunks) > 0 else doc.addChunk()
         loaded = True
     else:
@@ -107,77 +105,70 @@ def iterative_match_photos(chunk, set_size: int = 250, overlap_ratio: float = 0.
             pbar.update(1)
 
 
-def realign_cameras(chunk: Chunk, batch_size: int = 50, max_iterations: int = 5,
-                    max_error: int = 1.1) -> None:
+def align_cameras(chunk: Chunk, cameras: List[Camera]) -> None:
+    for camera in cameras:
+        camera.transform = None
+    try:
+        chunk.alignCameras(cameras=cameras)
+    except Exception as error:
+        handle_error(error)
+
+
+def realign_cameras(chunk: Chunk, batch_size: int = 50, max_iterations: int = 5, timeout=2) -> None:
     """
-    Tries to realign cameras in the given chunk by attempting to optimize camera alignment multiple times. It stops if the process isn't improving or if it reaches a maximum iteration count.
+    Tries to realign cameras in the given chunk by attempting to optimize camera alignment multiple times.
+    It stops if the process isn't improving as set by the timeout or if it reaches a maximum iteration count.
 
-    Args:
-        chunk (Chunk): The Metashape Chunk.
-        batch_size (int, optional): The number of cameras to be realigned per iteration. Defaults to 50.
-        max_iterations (int, optional): Maximum number of iterations to perform. Defaults to 5.
-        max_error (int, optional): Maximum allowed error in camera alignment. Defaults to 0.1.
-            """
+    :param chunk: The Metashape Chunk.
+    :param batch_size: The number of cameras to be realigned per iteration. Defaults to 50.
+    :param max_iterations: Maximum number of iterations to perform. Defaults to 5.
+    :param timeout: Maximum number of stale iterations to perform before finishing. Defaults to 2.
+    """
 
-    if max_error < 1:
-        print(
-            f"realign_cameras called with max_error {max_error}. "
-            f"Max error must be greater than 1. Setting to {max_error + 1}")
-        max_error = max_error + 1
+    iteration = 0
+    stale_iterations = 0
 
-    def iteratively_align(cameras: List[Camera], timeout: int = 3) -> None:
-        for camera in cameras:
-            camera.transform = None
+    num_unaligned_cameras_start = sum(camera.transform is None for camera in chunk.cameras)
+    initial_alignment = num_unaligned_cameras_start
+    total_cameras = len(chunk.cameras)
 
-        try:
-            chunk.alignCameras(cameras=cameras)
-        except Exception as error:
-            handle_error(error)
+    pbar_iteration = tqdm(total=max_iterations, desc="Realignment Iterations", dynamic_ncols=True)
 
-        iteration = 0
-        stale_iterations = 0
+    while iteration < max_iterations:
+        print(f"Optimizing alignment... Iteration {iteration + 1}")
 
-        num_unaligned_cameras_start = sum(camera.transform is None for camera in chunk.cameras)
-        initial_alignment = num_unaligned_cameras_start
-        total_cameras = len(chunk.cameras)
-
-        pbar_iteration = tqdm(total=max_iterations, desc="Realignment Iterations", dynamic_ncols=True)
-
-        while iteration < max_iterations:
-            print(f"Optimizing alignment... Iteration {iteration + 1}")
-
-            realign_batch = []
-            for camera in chunk.cameras:
-                if camera.transform is None:
-                    realign_batch.append(camera)
-                    if len(realign_batch) == batch_size:  # if the batch size is reached, align the cameras
-                        iteratively_align(realign_batch)
-                        realign_batch = []  # clear the batch
-                elif realign_batch:  # if we hit an aligned camera and have unaligned cameras in the batch
-                    iteratively_align(realign_batch)
+        realign_batch = []
+        for camera in chunk.cameras:
+            if camera.transform is None:
+                realign_batch.append(camera)
+                if len(realign_batch) == batch_size:  # if the batch size is reached, align the cameras
+                    align_cameras(chunk, realign_batch)
                     realign_batch = []  # clear the batch
+            elif realign_batch:  # if we hit an aligned camera and have unaligned cameras in the batch
+                align_cameras(chunk, realign_batch)
+                realign_batch = []  # clear the batch
 
-            if realign_batch:  # align any remaining unaligned cameras
-                iteratively_align(realign_batch)
+        if realign_batch:  # align any remaining unaligned cameras
+            align_cameras(chunk, realign_batch)
 
-            num_unaligned_cameras_end = sum(camera.transform is None for camera in chunk.cameras)
+        num_unaligned_cameras_end = sum(camera.transform is None for camera in chunk.cameras)
 
-            if num_unaligned_cameras_end == num_unaligned_cameras_start:
-                stale_iterations += 1
-            else:
-                stale_iterations = 0
+        if num_unaligned_cameras_end == num_unaligned_cameras_start:
+            stale_iterations += 1
+        else:
+            stale_iterations = 0
 
-            if stale_iterations >= timeout:
-                break
+        if stale_iterations >= timeout:
+            break
 
-            if iteration == max_iterations:
-                print(f"Stopped realignment after {max_iterations} iterations.")
-            else:
-                print(f"All cameras realaligned after {iteration} iterations.")
+        if iteration == max_iterations:
+            print(f"Stopped realignment after {max_iterations} iterations.")
+        else:
+            print(f"All cameras realaligned after {iteration} iterations.")
 
-            num_unaligned_cameras_start = num_unaligned_cameras_end
-            iteration += 1
-            pbar_iteration.update()
+        num_unaligned_cameras_start = num_unaligned_cameras_end
+        iteration += 1
+        pbar_iteration.update()
 
         pbar_iteration.close()
 
@@ -207,23 +198,36 @@ def remove_low_quality_cameras(chunk: Chunk, threshold: float = 0.5) -> None:
 
 
 def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, lower_percentile: float = 10,
-                       delta_ratio: float = 0.05, total_allowable_error: float = 0.5, iterations: int = 10) -> None:
+                       delta_ratio: float = 0.1, total_allowable_error: float = 0.5, iterations: int = 10) -> None:
     """
-    Iteratively optimizes the alignment of tie points in a chunk by removing points with high reprojection error
-    and re-adjusting camera positions until the mean or delta mean reprojection error falls below a certain threshold.
+        Iteratively optimizes the alignment of tie points in a Metashape Chunk. This is accomplished by removing points
+        with high reprojection error and adjusting camera positions. The iterative process continues until the mean or
+        delta mean reprojection error falls below a specified threshold or the maximum number of iterations is reached.
+
+        :param chunk: The Metashape Chunk to be optimized.
+        :param upper_percentile: Percentile of the reprojection errors used to set the initial threshold for point removal.
+        :param lower_percentile: Percentile of the reprojection errors used to set the final threshold for point removal.
+        :param delta_ratio: Ratio used to calculate the error delta from the mean error. This controls how much the mean
+                        error needs to decrease in each iteration for the process to continue. A larger delta_ratio
+                        tolerates larger changes in mean error, potentially leading to more iterations but possibly less
+                        precise optimization. A smaller delta_ratio requires smaller changes in mean error, potentially
+                        leading to fewer iterations but more precise optimization. Adjust based on computational resources
+                        and desired precision.
+        :param total_allowable_error: Maximum reprojection error allowed. If the mean error falls below this value, the optimization process is stopped.
+        :param iterations: Maximum number of iterations for the optimization process.
     """
 
     points = chunk.tie_points.points
 
-    if points is None:
+    if chunk.tie_points.points is None:
         print("No tie points found")
         return
 
-    filter = Metashape.TiePoints.Filter()
+    tie_point_filter = Metashape.TiePoints.Filter()
 
-    filter.init(chunk, criterion=Metashape.TiePoints.Filter.ReprojectionError)
+    tie_point_filter.init(chunk, criterion=Metashape.TiePoints.Filter.ReprojectionError)
 
-    reprojection_errors = [filter.values[i] for i in range(len(points)) if points[i].valid]
+    reprojection_errors = [tie_point_filter.values[i] for i in range(len(points)) if points[i].valid]
 
     initial_threshold = np.percentile(reprojection_errors, upper_percentile)
     final_threshold = np.percentile(reprojection_errors, lower_percentile)
@@ -235,13 +239,13 @@ def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, low
     error_delta = old_mean_error * delta_ratio
 
     for _ in tqdm(range(iterations), desc="Optimizing alignment"):
-        filter.selectPoints(initial_threshold)
+        tie_point_filter.selectPoints(initial_threshold)
         chunk.tie_points.removeSelectedPoints()
 
         initial_threshold -= decrement
         optimize_cameras(chunk)
 
-        reprojection_errors = [filter.values[i] for i in range(len(points)) if points[i].valid]
+        reprojection_errors = [tie_point_filter.values[i] for i in range(len(points)) if points[i].valid]
         new_mean_error = np.mean(reprojection_errors)
 
         error = abs(new_mean_error - old_mean_error)
@@ -261,8 +265,7 @@ def reduce_cameras(chunk) -> None:
 
 
 def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path, None] = None,
-                   use_mask: bool = False, set_size: int = None, match: bool = True, align: bool = True,
-                   realign: bool = True):
+                   use_mask: bool = False, set_size: int = None):
     doc, chunk, loaded = create_or_load_metashape_project(data)
 
     if len(chunk.cameras) > 0:
@@ -306,7 +309,6 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
     realign_cameras(chunk, set_size)
 
     save(doc)
-
 
     build_depths_progress_bar = TqdmUpdate(total=100, desc="Building depth maps")
 

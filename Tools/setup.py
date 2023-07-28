@@ -26,10 +26,13 @@ def install_requirements():
     print("All packages from requirements.txt have been installed.")
 
 
+def downloadMetashape():
+
+
 def main():
     install_requirements()
 
-    whls = get_all_files('bin', '*.whl')
+    whls = get_all_files('../bin', '*.whl')
     for whl in whls:
         package_name = whl.stem.split('-')[0]  # Get package name from .whl file
         install_and_import(package_name, f'bin/{whl.name}')

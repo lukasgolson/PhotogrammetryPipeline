@@ -7,7 +7,7 @@
       <excludeFolder url="file://$MODULE_DIR$/third-party/SkyRemoval/model" />
       <excludeFolder url="file://$MODULE_DIR$/third-party/SkyRemoval/venv" />
     </content>
-    <orderEntry type="inheritedJdk" />
+    <orderEntry type="jdk" jdkName="E:\lukas_olson_msc\anaconda3\envs\Reconstruction" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="PackageRequirementsSettings">
