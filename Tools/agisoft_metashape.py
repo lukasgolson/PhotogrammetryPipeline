@@ -223,29 +223,29 @@ def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, low
         print("No tie points found")
         return
 
-    tie_point_filter = Metashape.TiePoints.Filter()
+    tie_point_filter_error = Metashape.TiePoints.Filter()
 
-    tie_point_filter.init(chunk, criterion=Metashape.TiePoints.Filter.ReprojectionError)
+    tie_point_filter_error.init(chunk, criterion=Metashape.TiePoints.Filter.ReprojectionError)
 
-    reprojection_errors = [tie_point_filter.values[i] for i in range(len(points)) if points[i].valid]
+    reprojection_errors = [tie_point_filter_error.values[i] for i in range(len(points)) if points[i].valid]
 
-    initial_threshold = np.percentile(reprojection_errors, upper_percentile)
+    threshold = np.percentile(reprojection_errors, upper_percentile)
     final_threshold = np.percentile(reprojection_errors, lower_percentile)
 
-    decrement = (initial_threshold - final_threshold) / iterations
+    decrement = (threshold - final_threshold) / iterations
 
     old_mean_error = np.mean(reprojection_errors)
 
     error_delta = old_mean_error * delta_ratio
 
     for _ in tqdm(range(iterations), desc="Optimizing alignment"):
-        tie_point_filter.selectPoints(initial_threshold)
+        tie_point_filter_error.selectPoints(threshold)
         chunk.tie_points.removeSelectedPoints()
 
-        initial_threshold -= decrement
+        threshold -= decrement
         optimize_cameras(chunk)
 
-        reprojection_errors = [tie_point_filter.values[i] for i in range(len(points)) if points[i].valid]
+        reprojection_errors = [tie_point_filter_error.values[i] for i in range(len(points)) if points[i].valid]
         new_mean_error = np.mean(reprojection_errors)
 
         error = abs(new_mean_error - old_mean_error)
@@ -253,6 +253,23 @@ def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, low
             break
 
         old_mean_error = new_mean_error
+
+
+def filter_reconstruction_uncertainty(chunk: Chunk, threshold: float = 75):
+    # 75 based on trial and error; supported by https://doi.org/10.1007/s00468-019-01866-x
+    tie_point_filter_uncertainty = Metashape.TiePoints.Filter()
+    tie_point_filter_uncertainty.init(chunk, criterion=Metashape.TiePoints.Filter.ReconstructionUncertainty)
+
+    tie_point_filter_uncertainty.selectPoints(threshold)
+    chunk.tie_points.removeSelectedPoints()
+
+
+def filter_projection_accuracy(chunk: Chunk, threshold: float = 10):
+    tie_point_filter_accuracy = Metashape.TiePoints.Filter()
+    tie_point_filter_accuracy.init(chunk, criterion=Metashape.TiePoints.Filter.ProjectionAccuracy)
+    tie_point_filter_accuracy.selectPoints(threshold)
+    chunk.tie_points.removeSelectedPoints()
+    chunk.optimizeCameras(fit_corrections=True)
 
 
 def save(doc: Metashape.Document):
@@ -304,7 +321,15 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
 
     realign_cameras(chunk, set_size)
 
+    save(doc)
+
     optimize_alignment(chunk)
+
+    filter_reconstruction_uncertainty(chunk)
+
+    filter_projection_accuracy(chunk)
+
+    save(doc)
 
     realign_cameras(chunk, set_size)
 
