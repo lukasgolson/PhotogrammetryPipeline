@@ -262,6 +262,7 @@ def filter_reconstruction_uncertainty(chunk: Chunk, threshold: float = 75):
 
     tie_point_filter_uncertainty.selectPoints(threshold)
     chunk.tie_points.removeSelectedPoints()
+    chunk.optimizeCameras(fit_corrections=True)
 
 
 def filter_projection_accuracy(chunk: Chunk, threshold: float = 10):
@@ -295,57 +296,58 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
 
         add_frames_to_chunk(chunk, frame_list)
 
-    if use_mask:
-        load_masks(chunk, mask_path)
+    if False:
+        if use_mask:
+            load_masks(chunk, mask_path)
 
-    save(doc)
+        save(doc)
 
-    if doc is None or chunk is None:
-        return
+        if doc is None or chunk is None:
+            return
 
-    remove_low_quality_cameras(chunk)
+        remove_low_quality_cameras(chunk)
 
-    save(doc)
+        save(doc)
 
-    if set_size is None:
-        set_size = int(len(chunk.cameras) * 0.1)
+        if set_size is None:
+            set_size = int(len(chunk.cameras) * 0.1)
 
-    print("Initial matching of photos at low resolution.")
-    chunk.matchPhotos(cameras=chunk.cameras, downscale=1, generic_preselection=True, reference_preselection=False,
-                      reset_matches=True, keep_keypoints=True,
-                      keypoint_limit=40000, tiepoint_limit=4000)
+        print("Initial matching of photos at low resolution.")
+        chunk.matchPhotos(cameras=chunk.cameras, downscale=1, generic_preselection=True, reference_preselection=False,
+                          reset_matches=True, keep_keypoints=True,
+                          keypoint_limit=40000, tiepoint_limit=4000)
 
-    chunk.alignCameras(cameras=chunk.cameras, adaptive_fitting=True, reset_alignment=True)
+        chunk.alignCameras(cameras=chunk.cameras, adaptive_fitting=True, reset_alignment=True)
 
-    save(doc)
+        save(doc)
 
-    realign_cameras(chunk, set_size)
+        realign_cameras(chunk, set_size)
 
-    save(doc)
+        save(doc)
 
-    optimize_alignment(chunk)
+        optimize_alignment(chunk)
 
-    filter_reconstruction_uncertainty(chunk)
+        filter_reconstruction_uncertainty(chunk)
 
-    filter_projection_accuracy(chunk)
+        filter_projection_accuracy(chunk)
 
-    save(doc)
+        save(doc)
 
-    realign_cameras(chunk, set_size)
+        realign_cameras(chunk, set_size)
 
-    save(doc)
+        save(doc)
 
     build_depths_progress_bar = TqdmUpdate(total=100, desc="Building depth maps")
 
     chunk.buildDepthMaps(downscale=2, filter_mode=Metashape.ModerateFiltering, max_neighbors=100,
-                         cameras=chunk.cameras, progress=build_depths_progress_bar)
+                         cameras=chunk.cameras, progress=build_depths_progress_bar.update_to)
 
     save(doc)
 
     build_point_cloud_progress_bar = TqdmUpdate(total=100, desc="Building point cloud")
 
     chunk.buildPointCloud(source_data=Metashape.DataSource.DepthMapsData, keep_depth=True,
-                          progress=build_point_cloud_progress_bar)
+                          progress=build_point_cloud_progress_bar.update_to)
 
     save(doc)
 

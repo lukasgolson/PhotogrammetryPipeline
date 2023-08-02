@@ -75,7 +75,8 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
 
         for video_file in video_files:
             media_tools.extract_frames(video_file,
-                                       frames_path, 0.9)  # 0.75 = 75% of the original video or from 60 fps to 15 fps
+                                       frames_path,
+                                       0.95)  # 0.95 = 95% of the original video dropped or from 60 fps to 3 fps
 
     if use_mask and not mask_path.exists():
         mask_path.mkdir(parents=True, exist_ok=True)
