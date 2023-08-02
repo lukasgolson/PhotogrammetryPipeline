@@ -296,46 +296,46 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
 
         add_frames_to_chunk(chunk, frame_list)
 
-    if False:
-        if use_mask:
-            load_masks(chunk, mask_path)
 
-        save(doc)
+    if use_mask:
+        load_masks(chunk, mask_path)
 
-        if doc is None or chunk is None:
-            return
+    save(doc)
 
-        remove_low_quality_cameras(chunk)
+    if doc is None or chunk is None:
+        return
 
-        save(doc)
+    remove_low_quality_cameras(chunk)
 
-        if set_size is None:
-            set_size = int(len(chunk.cameras) * 0.1)
+    save(doc)
 
-        print("Initial matching of photos at low resolution.")
-        chunk.matchPhotos(cameras=chunk.cameras, downscale=1, generic_preselection=True, reference_preselection=False,
-                          reset_matches=True, keep_keypoints=True,
-                          keypoint_limit=40000, tiepoint_limit=4000)
+    if set_size is None:
+        set_size = int(len(chunk.cameras) * 0.1)
 
-        chunk.alignCameras(cameras=chunk.cameras, adaptive_fitting=True, reset_alignment=True)
+    print("Initial matching of photos at low resolution.")
+    chunk.matchPhotos(cameras=chunk.cameras, downscale=1, generic_preselection=True, reference_preselection=False,
+                      reset_matches=True, keep_keypoints=True,
+                      keypoint_limit=40000, tiepoint_limit=4000)
 
-        save(doc)
+    chunk.alignCameras(cameras=chunk.cameras, adaptive_fitting=True, reset_alignment=True)
 
-        realign_cameras(chunk, set_size)
+    save(doc)
 
-        save(doc)
+    realign_cameras(chunk, set_size)
 
-        optimize_alignment(chunk)
+    save(doc)
 
-        filter_reconstruction_uncertainty(chunk)
+    optimize_alignment(chunk)
 
-        filter_projection_accuracy(chunk)
+    filter_reconstruction_uncertainty(chunk)
 
-        save(doc)
+    filter_projection_accuracy(chunk)
 
-        realign_cameras(chunk, set_size)
+    save(doc)
 
-        save(doc)
+    realign_cameras(chunk, set_size)
+
+    save(doc)
 
     build_depths_progress_bar = TqdmUpdate(total=100, desc="Building depth maps")
 
