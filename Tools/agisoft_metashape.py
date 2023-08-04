@@ -55,6 +55,9 @@ def load_masks(chunk: Metashape.Chunk, mask_path: Path):
 
     try:
         chunk.generateMasks(path=mask_file_path, masking_mode=Metashape.MaskingModeFile)
+
+
+
     except Exception as e:
         print(f"An error occurred while generating masks: {e}. Continuing...")
 
@@ -114,7 +117,7 @@ def align_cameras(chunk: Chunk, cameras: List[Camera]) -> None:
         handle_error(error)
 
 
-def realign_cameras(chunk: Chunk, batch_size: int = 50, max_iterations: int = 5, timeout=2) -> None:
+def iterative_align_cameras(chunk: Chunk, batch_size: int = 50, max_iterations: int = 5, timeout=2) -> None:
     """
     Tries to realign cameras in the given chunk by attempting to optimize camera alignment multiple times.
     It stops if the process isn't improving as set by the timeout or if it reaches a maximum iteration count.
@@ -135,7 +138,7 @@ def realign_cameras(chunk: Chunk, batch_size: int = 50, max_iterations: int = 5,
     pbar_iteration = tqdm(total=max_iterations, desc="Realignment Iterations", dynamic_ncols=True)
 
     while iteration < max_iterations:
-        print(f"Optimizing alignment... Iteration {iteration + 1}")
+        print(f"Iteratively aligning... Iteration {iteration + 1}")
 
         realign_batch = []
         for camera in chunk.cameras:
@@ -296,7 +299,6 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
 
         add_frames_to_chunk(chunk, frame_list)
 
-
     if use_mask:
         load_masks(chunk, mask_path)
 
@@ -305,6 +307,7 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
     if doc is None or chunk is None:
         return
 
+
     remove_low_quality_cameras(chunk)
 
     save(doc)
@@ -312,7 +315,7 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
     if set_size is None:
         set_size = int(len(chunk.cameras) * 0.1)
 
-    print("Initial matching of photos at low resolution.")
+    print("Initial matching and alignment of photos at low resolution.")
     chunk.matchPhotos(cameras=chunk.cameras, downscale=1, generic_preselection=True, reference_preselection=False,
                       reset_matches=True, keep_keypoints=True,
                       keypoint_limit=40000, tiepoint_limit=4000)
@@ -321,7 +324,7 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
 
     save(doc)
 
-    realign_cameras(chunk, set_size)
+    iterative_align_cameras(chunk, set_size)
 
     save(doc)
 
@@ -333,20 +336,37 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
 
     save(doc)
 
-    realign_cameras(chunk, set_size)
+    iterative_align_cameras(chunk, set_size)
 
     save(doc)
 
-    build_depths_progress_bar = TqdmUpdate(total=100, desc="Building depth maps")
+    build_rough_model_progress_bar = TqdmUpdate(total=100, desc="Building Rough Model")
 
-    chunk.buildDepthMaps(downscale=2, filter_mode=Metashape.ModerateFiltering, max_neighbors=100,
+    chunk.buildModel(surface_type=Metashape.SurfaceType.Arbitrary, source_data=Metashape.DataSource.TiePointsData,
+                     progress=build_rough_model_progress_bar.update_to)
+
+    save(doc)
+
+    reduce_overlap_progress_bar = TqdmUpdate(total=100, desc="Reducing camera overlap")
+
+    chunk.reduceOverlap(overlap=3, progress=reduce_overlap_progress_bar.update_to)
+
+    save(doc)
+
+    chunk.generateMasks(masking_mode=Metashape.MaskingModeModel, mask_operation=Metashape.MaskOperationReplacement)
+    save(doc)
+
+    build_depths_progress_bar = TqdmUpdate(total=100, desc="Building initial depth maps")
+
+    # build depth map in ultra quality
+    chunk.buildDepthMaps(downscale=1, filter_mode=Metashape.ModerateFiltering, max_neighbors=100,
                          cameras=chunk.cameras, progress=build_depths_progress_bar.update_to)
 
     save(doc)
 
     build_point_cloud_progress_bar = TqdmUpdate(total=100, desc="Building point cloud")
 
-    chunk.buildPointCloud(source_data=Metashape.DataSource.DepthMapsData, keep_depth=True,
+    chunk.buildPointCloud(source_data=Metashape.DataSource.DepthMapsData, point_confidence=True, keep_depth=True,
                           progress=build_point_cloud_progress_bar.update_to)
 
     save(doc)
