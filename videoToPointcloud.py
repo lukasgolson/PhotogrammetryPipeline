@@ -44,7 +44,7 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
         return
 
     tools_path = data_path / "tools"
-    export_path = data_path / "export" / str(datetime.datetime.now())
+    export_path = data_path / "export" / str(time.time() * 1000)
 
     temp_path = data_path / "tmp"
 
@@ -72,6 +72,8 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
     media_tools = irss_media_tools.MediaTools(base_dir=tools_path)
 
     if not frames_path.exists():
+        frame_start_time = time.time()
+
         # Now recreate the directory
         frames_path.mkdir(parents=True, exist_ok=True)
 
@@ -79,6 +81,15 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
             media_tools.extract_frames(video_file,
                                        frames_path,
                                        0.95)  # 0.95 = 95% of the original video dropped or from 60 fps to 3 fps
+
+        frame_end_time = time.time()
+        frame_elapsed_time = frame_end_time - frame_start_time
+
+        file_count = 0
+        for path in frames_path.rglob('*'):
+            if path.is_file():
+                file_count += 1
+        print(f"Extracted {file_count} frames in {format_elapsed_time(frame_elapsed_time)}")
 
     if use_mask and not mask_path.exists():
         mask_path.mkdir(parents=True, exist_ok=True)
@@ -93,12 +104,29 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
     process_frames(data_path, frames_path, export_path, mask_path, use_mask)
 
     end_time = time.time()
-    elapsed_time = end_time - start_time
-    print(f"Elapsed execution time: {elapsed_time}")
+    frame_elapsed_time = end_time - start_time
+    print(f"Elapsed execution time: {format_elapsed_time(frame_elapsed_time)}")
+
+
+def format_elapsed_time(elapsed_time):
+    hours = int(elapsed_time // 3600)
+    minutes = int((elapsed_time % 3600) // 60)
+    seconds = int(elapsed_time % 60)
+
+    time_format = ""
+    if hours > 0:
+        time_format += f"{hours} hour{'s' if hours > 1 else ''} "
+
+    if minutes > 0:
+        time_format += f"{minutes} minute{'s' if minutes > 1 else ''} "
+
+    time_format += f"{seconds} second{'s' if seconds > 1 else ''}"
+
+    return time_format
 
 
 if __name__ == '__main__':
     data_dir = Path("Data")
     video_subdir = data_dir / Path("video")
 
-    process_videos(data_dir, video_subdir, use_mask=True, regenerate=True)
+    process_videos(data_dir, video_subdir, use_mask=True, regenerate=False)

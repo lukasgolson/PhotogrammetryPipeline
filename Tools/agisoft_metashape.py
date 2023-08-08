@@ -79,8 +79,8 @@ def iterative_match_photos(chunk, set_size: int = 250, overlap_ratio: float = 0.
     number_of_cameras = len(chunk.cameras)
 
     # Calculate the total number of sets by floor dividing the total number of frames by the set size.
-    # If there is a remainder, our modulus will be greater than 0, making the bool True.
-    # bool True = 1.
+    # If there is a remainder, our modulus will be greater than 0, making the bool True,
+    # adding an additional set (bool True = 1).
     total_sets = (number_of_cameras // set_size) + (number_of_cameras % set_size > 0)
 
     # Calculate the overlap between sets by multiplying the set size by the overlap ratio.
@@ -288,7 +288,7 @@ def reduce_cameras(chunk) -> None:
 
 def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path, None] = None,
                    use_mask: bool = False, set_size: int = None):
-    doc, chunk, loaded = create_or_load_metashape_project(data)
+    doc, chunk, loaded = create_or_load_metashape_project(export)
 
     if len(chunk.cameras) > 0:
         print("Chunk already has cameras, skipping adding frames.")

@@ -40,7 +40,6 @@ class DownloadableTool:
         platform_data = self.get_platform_data()
         extension = platform_data.get('extension', "")
         path = directory / f'{self.tool_name}{extension}'
-        print(f"Generated path: {path}")
         return path
 
     def calculate_dir(self) -> Path:
