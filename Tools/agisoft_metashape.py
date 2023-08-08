@@ -49,12 +49,13 @@ def add_frames_to_chunk(chunk: Metashape.Chunk, frames: List[Path]):
 
 
 def load_masks(chunk: Metashape.Chunk, mask_path: Path):
-    print("Loading masks")
-
     mask_file_path = str(mask_path.resolve()) + "/{filename}_mask.png"
 
+    load_masks_loading_bar = TqdmUpdate(total=100, desc="Loading Masks")
+
     try:
-        chunk.generateMasks(path=mask_file_path, masking_mode=Metashape.MaskingModeFile)
+        chunk.generateMasks(path=mask_file_path, masking_mode=Metashape.MaskingModeFile,
+                            progress=load_masks_loading_bar.update_to)
 
 
 
@@ -97,11 +98,13 @@ def iterative_match_photos(chunk, set_size: int = 250, overlap_ratio: float = 0.
             for j, camera in enumerate(chunk.cameras[start_index:end_index]):
                 match_list.append(camera)
 
+            matching_bar = TqdmUpdate(total=100, desc=f"Matching images, iteration: {i} ")
+
             print(f"Matching photos {start_index} to {end_index}")
             try:
                 chunk.matchPhotos(cameras=match_list, downscale=1, generic_preselection=False,
                                   reference_preselection=False, keep_keypoints=True, keypoint_limit=40000,
-                                  tiepoint_limit=4000)
+                                  tiepoint_limit=4000, progress=matching_bar.update_to)
             except Exception as e:
                 handle_error(e)
 
@@ -138,10 +141,8 @@ def iterative_align_cameras(chunk: Chunk, batch_size: int = 50, max_iterations: 
     pbar_iteration = tqdm(total=max_iterations, desc="Realignment Iterations", dynamic_ncols=True)
 
     while iteration < max_iterations:
-        print(f"Iteratively aligning... Iteration {iteration + 1}")
-
         realign_batch = []
-        for camera in chunk.cameras:
+        for camera in tqdm(chunk.cameras, desc=f"Iteratively aligning... Iteration {iteration + 1}", dynamic_ncols=True):
             if camera.transform is None:
                 realign_batch.append(camera)
                 if len(realign_batch) == batch_size:  # if the batch size is reached, align the cameras
@@ -307,7 +308,6 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
     if doc is None or chunk is None:
         return
 
-
     remove_low_quality_cameras(chunk)
 
     save(doc)
@@ -359,7 +359,7 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
     build_depths_progress_bar = TqdmUpdate(total=100, desc="Building initial depth maps")
 
     # build depth map in ultra quality
-    chunk.buildDepthMaps(downscale=1, filter_mode=Metashape.ModerateFiltering, max_neighbors=100,
+    chunk.buildDepthMaps(downscale=1, filter_mode=Metashape.MildFiltering, max_neighbors=100,
                          cameras=chunk.cameras, progress=build_depths_progress_bar.update_to)
 
     save(doc)

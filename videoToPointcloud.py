@@ -6,6 +6,7 @@ https://www.agisoft.com/downloads/installer/ into the `bin` folder.
 
 2) Run the following command in the terminal: ```python setup.py```
 """
+import datetime
 import shutil
 import time
 from pathlib import Path
@@ -43,8 +44,9 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
         return
 
     tools_path = data_path / "tools"
+    export_path = data_path / "export" / str(datetime.datetime.now())
+
     temp_path = data_path / "tmp"
-    export_path = data_path / "export"
 
     frames_path = temp_path / "frames"
     mask_path = temp_path / "masks"
@@ -99,4 +101,4 @@ if __name__ == '__main__':
     data_dir = Path("Data")
     video_subdir = data_dir / Path("video")
 
-    process_videos(data_dir, video_subdir, use_mask=True, regenerate=False)
+    process_videos(data_dir, video_subdir, use_mask=True, regenerate=True)
