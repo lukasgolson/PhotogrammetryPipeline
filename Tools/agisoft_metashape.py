@@ -1,11 +1,14 @@
+import pickle
 from pathlib import Path
 from typing import List, Union
 
 import Metashape
 import numpy as np
 from Metashape import Chunk, Camera
+from statemachine import State, StateMachine
 from tqdm import tqdm
 
+from Tools.SM import SerializableStateMachine
 from helpers import get_all_files
 
 
@@ -14,6 +17,48 @@ class TqdmUpdate(tqdm):
         self.update(p - self.n)  # Provide here progress increment
         if p >= self.total:  # Check if the progress is complete
             self.close()
+
+
+class MetashapeMachine(SerializableStateMachine):
+    load_state = State(initial=True)
+    load_project = State()
+    add_frames = State()
+    load_sky_masks = State()
+    clean_cameras = State()
+    broad_match_photos = State()
+    broad_align_cameras = State()
+    iterative_align = State()
+    optimize_alignment = State()
+    filter_uncertainty = State()
+    filter_accuracy = State()
+    build_rough_model = State()
+    reduce_overlap = State()
+    generate_masks = State()
+    build_depth_maps = State()
+    build_point_cloud = State()
+    export_point_cloud = State()
+
+    cycle = (
+            load_state.to(load_project)
+            | load_project.to(add_frames)
+            | add_frames.to(load_sky_masks)
+            | load_sky_masks.to(clean_cameras)
+            | clean_cameras.to(broad_match_photos)
+            | broad_match_photos.to(broad_align_cameras)
+            | broad_align_cameras.to(iterative_align)
+            | iterative_align.to(optimize_alignment)
+            | optimize_alignment.to(filter_uncertainty)
+            | filter_uncertainty.to(filter_accuracy)
+            | filter_accuracy.to(build_rough_model)
+            | build_rough_model.to(reduce_overlap)
+            | reduce_overlap.to(generate_masks)
+            | generate_masks.to(build_depth_maps)
+            | build_depth_maps.to(build_point_cloud)
+            | build_point_cloud.to(export_point_cloud)
+    )
+
+    def initial_state(self):
+        return self.load_state  # Start from the initial state
 
 
 def create_or_load_metashape_project(data: Path):
@@ -142,7 +187,8 @@ def iterative_align_cameras(chunk: Chunk, batch_size: int = 50, max_iterations: 
 
     while iteration < max_iterations:
         realign_batch = []
-        for camera in tqdm(chunk.cameras, desc=f"Iteratively aligning... Iteration {iteration + 1}", dynamic_ncols=True):
+        for camera in tqdm(chunk.cameras, desc=f"Iteratively aligning... Iteration {iteration + 1}",
+                           dynamic_ncols=True):
             if camera.transform is None:
                 realign_batch.append(camera)
                 if len(realign_batch) == batch_size:  # if the batch size is reached, align the cameras
@@ -376,3 +422,9 @@ def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path
     save(doc)
 
     print("Done!")
+
+
+if __name__ == "__main__":
+    sm = MetashapeMachine()
+    img_path = str(Path("machine.png").resolve())
+    sm._graph().write_png(img_path)
