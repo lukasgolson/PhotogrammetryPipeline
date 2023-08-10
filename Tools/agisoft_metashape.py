@@ -1,11 +1,10 @@
-import pickle
 from pathlib import Path
-from typing import List, Union
+from typing import List, Union, Tuple
 
 import Metashape
 import numpy as np
 from Metashape import Chunk, Camera
-from statemachine import State, StateMachine
+from statemachine import State
 from tqdm import tqdm
 
 from Tools.SM import SerializableStateMachine
@@ -20,36 +19,58 @@ class TqdmUpdate(tqdm):
 
 
 class MetashapeMachine(SerializableStateMachine):
-    load_state = State(initial=True)
-    load_project = State()
+
+    def __init__(self, data_path: Path, frames_path: Path,
+                 mask_path: Union[Path, None] = None,
+                 export: [Path, None] = None, set_size_ratio: float = 0.1):
+
+        self.Doc: [Metashape.Document, None] = None
+        self.Chunk: [Metashape.Chunk, None] = None
+        self.Loaded: bool = False
+        self.data_path: Path = data_path
+        self.frames_path: Path = frames_path
+        self.mask_path: Path = mask_path
+
+        if export is None:
+            self.export_path: Path = data_path / "export"
+        else:
+            self.export_path: Path = export
+
+        self.set_size: int = 128
+        self.set_size_ratio: float = set_size_ratio
+        self.alignment_count: int = 0
+
+        super().__init__(filename=self.export_path / "sm.pickle")
+
+    load_project = State(initial=True)
     add_frames = State()
     load_sky_masks = State()
-    clean_cameras = State()
+    clean_cameras = State(name="Remove low quality images")
     broad_match_photos = State()
     broad_align_cameras = State()
     iterative_align = State()
-    optimize_alignment = State()
-    filter_uncertainty = State()
-    filter_accuracy = State()
+    optimize_alignment = State(name="Optimize alignment")
+    filter_uncertainty = State(name="Filter reconstruction uncertainty")
+    filter_accuracy = State(name="Filter projection accuracy")
     build_rough_model = State()
-    reduce_overlap = State()
-    generate_masks = State()
+    reduce_overlap = State(name="Reduce camera overlap")
+    generate_masks = State(name="Generate model-based mask")
     build_depth_maps = State()
     build_point_cloud = State()
-    export_point_cloud = State()
+    export_point_cloud = State(final=True)
 
     cycle = (
-            load_state.to(load_project)
-            | load_project.to(add_frames)
-            | add_frames.to(load_sky_masks)
+            load_project.to(add_frames)
+            | add_frames.to(load_sky_masks, cond="guard_project_loaded")
             | load_sky_masks.to(clean_cameras)
             | clean_cameras.to(broad_match_photos)
             | broad_match_photos.to(broad_align_cameras)
             | broad_align_cameras.to(iterative_align)
-            | iterative_align.to(optimize_alignment)
+            | iterative_align.to(optimize_alignment, unless="guard_prealigned")
+            | iterative_align.to(build_rough_model, cond="guard_prealigned")
             | optimize_alignment.to(filter_uncertainty)
             | filter_uncertainty.to(filter_accuracy)
-            | filter_accuracy.to(build_rough_model)
+            | filter_accuracy.to(iterative_align)
             | build_rough_model.to(reduce_overlap)
             | reduce_overlap.to(generate_masks)
             | generate_masks.to(build_depth_maps)
@@ -57,11 +78,133 @@ class MetashapeMachine(SerializableStateMachine):
             | build_point_cloud.to(export_point_cloud)
     )
 
+    def guard_project_loaded(self):
+        return Chunk is not None
+
+    def guard_prealigned(self):
+        return self.alignment_count >= 2
+
     def initial_state(self):
-        return self.load_state  # Start from the initial state
+        return self.load_project  # Start from the initial state
+
+    def get_supplementary_state(self) -> dict:
+        dict = {"setSize": self.set_size,
+                "setSizeRatio": self.set_size_ratio,
+                "alignmentCount": self.alignment_count}
+        return dict
 
 
-def create_or_load_metashape_project(data: Path):
+    def set_supplementary_state(self, dictionary: dict):
+        self.set_size: int = dictionary.get("setSize")
+        self.set_size_ratio: dictionary.get("setSizeRatio")
+        self.alignment_count: dictionary.get("alignmentCount")
+        return True;
+
+    def after_cycle(self):
+        if self.Doc is not None and self.Doc.read_only is not True:
+            self.Doc.save()
+
+        self.serialize_statemachine()
+
+    def on_enter_load_project(self):
+        print("Loading project.")
+        self.Doc, self.Chunk, self.Loaded = create_or_load_metashape_project(self.export_path)
+
+    def on_enter_add_frames(self):
+        print("Adding frames.")
+        if len(self.Chunk.cameras) > 0:
+            print("Chunk already has cameras, skipping adding frames.")
+        else:
+            frame_list = sorted(get_all_files(self.frames_path, "*"))
+            if not frame_list:
+                print("No frames found in the specified path.")
+                return
+
+            add_frames_to_chunk(self.Chunk, frame_list)
+
+        self.set_size = int(len(self.Chunk.cameras)) * self.set_size_ratio
+
+    def on_enter_load_sky_masks(self):
+        print("Loading sky masks.")
+
+        if self.mask_path is not None:
+            load_masks(self.Chunk, self.mask_path)
+
+    def on_enter_clean_cameras(self):
+        print("Cleaning cameras.")
+        remove_low_quality_cameras(self.Chunk)
+
+    def on_enter_broad_match_photos(self):
+        broad_match_photos_progress_bar = TqdmUpdate(total=100, desc="Performing broad photo matching...")
+
+        self.Chunk.matchPhotos(cameras=self.Chunk.cameras, downscale=1, generic_preselection=True,
+                               reference_preselection=False,
+                               reset_matches=True, keep_keypoints=True,
+                               keypoint_limit=40000, tiepoint_limit=4000,
+                               progress=broad_match_photos_progress_bar.update_to)
+
+    def on_enter_broad_align_cameras(self):
+        broad_photos_alignment_progress_bar = TqdmUpdate(total=100, desc="Performing broad camera alignment.")
+
+        self.Chunk.alignCameras(cameras=self.Chunk.cameras, adaptive_fitting=True, reset_alignment=True,
+                                progress=broad_photos_alignment_progress_bar.update_to)
+
+    def on_enter_iterative_align(self):
+
+        iterative_align_cameras(self.Chunk, self.set_size)
+
+        self.alignment_count += 1
+
+    def on_enter_optimize_alignment(self):
+        optimize_alignment(self.Chunk)
+
+    def on_enter_filter_uncertainty(self):
+        filter_reconstruction_uncertainty(self.Chunk)
+
+    def on_enter_filter_accuracy(self):
+        filter_projection_accuracy(self.Chunk)
+
+    def on_enter_build_rough_model(self):
+        build_rough_model_progress_bar = TqdmUpdate(total=100, desc="Building Rough Model")
+        self.Chunk.buildModel(surface_type=Metashape.SurfaceType.Arbitrary,
+                              source_data=Metashape.DataSource.TiePointsData,
+                              progress=build_rough_model_progress_bar.update_to)
+
+    def on_enter_reduce_overlap(self):
+        reduce_overlap_progress_bar = TqdmUpdate(total=100, desc="Reducing camera overlap")
+        self.Chunk.reduceOverlap(overlap=3, progress=reduce_overlap_progress_bar.update_to)
+
+    def on_enter_generate_masks(self):
+        self.Chunk.generateMasks(masking_mode=Metashape.MaskingModeModel,
+                                 mask_operation=Metashape.MaskOperationReplacement)
+
+    def on_enter_build_depth_maps(self):
+        build_depths_progress_bar = TqdmUpdate(total=100, desc="Building initial depth maps")
+
+        # build depth map in ultra quality
+        self.Chunk.buildDepthMaps(downscale=1, filter_mode=Metashape.MildFiltering, max_neighbors=100,
+                                  cameras=self.Chunk.cameras, progress=build_depths_progress_bar.update_to)
+
+    def on_enter_build_point_cloud(self):
+        build_point_cloud_progress_bar = TqdmUpdate(total=100, desc="Building point cloud")
+
+        self.Chunk.buildPointCloud(source_data=Metashape.DataSource.DepthMapsData, point_confidence=True,
+                                   keep_depth=True,
+                                   progress=build_point_cloud_progress_bar.update_to)
+
+    def on_enter_export_point_cloud(self):
+        export_point_cloud_progress_bar = TqdmUpdate(total=100, desc="Exporting Point Cloud")
+
+        self.Chunk.exportPointCloud(str((self.export_path / "pointcloud.ply").resolve()),
+                                    source_data=Metashape.DataSource.PointCloudData,
+                                    progress=export_point_cloud_progress_bar.update_to)
+
+    def run(self):
+        while self.current_state not in self.final_states:
+            self.send("cycle")
+
+
+def create_or_load_metashape_project(data: Path) -> Tuple[Metashape.Document, Metashape.Chunk, bool]:
     project_path = data / "metashape_project.psx"
     project_path = project_path.resolve()
 
@@ -74,7 +217,7 @@ def create_or_load_metashape_project(data: Path):
     # If the project file already exists, load it
     if project_path.exists():
         print("Loading existing project")
-        doc.open(str(project_path))
+        doc.open(str(project_path), read_only=False, ignore_lock=True)
         # Assuming that we'd want to work with the first chunk in the project
         chunk = doc.chunk if len(doc.chunks) > 0 else doc.addChunk()
         loaded = True
@@ -101,8 +244,6 @@ def load_masks(chunk: Metashape.Chunk, mask_path: Path):
     try:
         chunk.generateMasks(path=mask_file_path, masking_mode=Metashape.MaskingModeFile,
                             progress=load_masks_loading_bar.update_to)
-
-
 
     except Exception as e:
         print(f"An error occurred while generating masks: {e}. Continuing...")
@@ -323,108 +464,13 @@ def filter_projection_accuracy(chunk: Chunk, threshold: float = 10):
     chunk.optimizeCameras(fit_corrections=True)
 
 
-def save(doc: Metashape.Document):
-    if not doc.read_only:
-        doc.save()
+def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path, None] = None):
+    state_machine = MetashapeMachine(data, frames, mask_path, export)
 
-
-def reduce_cameras(chunk) -> None:
-    return None
-
-
-def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path, None] = None,
-                   use_mask: bool = False, set_size: int = None):
-    doc, chunk, loaded = create_or_load_metashape_project(export)
-
-    if len(chunk.cameras) > 0:
-        print("Chunk already has cameras, skipping adding frames.")
-    else:
-        frame_list = sorted(get_all_files(frames, "*"))
-        if not frame_list:
-            print("No frames found in the specified path.")
-            return
-
-        add_frames_to_chunk(chunk, frame_list)
-
-    if use_mask:
-        load_masks(chunk, mask_path)
-
-    save(doc)
-
-    if doc is None or chunk is None:
-        return
-
-    remove_low_quality_cameras(chunk)
-
-    save(doc)
-
-    if set_size is None:
-        set_size = int(len(chunk.cameras) * 0.1)
-
-    print("Initial matching and alignment of photos at low resolution.")
-    chunk.matchPhotos(cameras=chunk.cameras, downscale=1, generic_preselection=True, reference_preselection=False,
-                      reset_matches=True, keep_keypoints=True,
-                      keypoint_limit=40000, tiepoint_limit=4000)
-
-    chunk.alignCameras(cameras=chunk.cameras, adaptive_fitting=True, reset_alignment=True)
-
-    save(doc)
-
-    iterative_align_cameras(chunk, set_size)
-
-    save(doc)
-
-    optimize_alignment(chunk)
-
-    filter_reconstruction_uncertainty(chunk)
-
-    filter_projection_accuracy(chunk)
-
-    save(doc)
-
-    iterative_align_cameras(chunk, set_size)
-
-    save(doc)
-
-    build_rough_model_progress_bar = TqdmUpdate(total=100, desc="Building Rough Model")
-
-    chunk.buildModel(surface_type=Metashape.SurfaceType.Arbitrary, source_data=Metashape.DataSource.TiePointsData,
-                     progress=build_rough_model_progress_bar.update_to)
-
-    save(doc)
-
-    reduce_overlap_progress_bar = TqdmUpdate(total=100, desc="Reducing camera overlap")
-
-    chunk.reduceOverlap(overlap=3, progress=reduce_overlap_progress_bar.update_to)
-
-    save(doc)
-
-    chunk.generateMasks(masking_mode=Metashape.MaskingModeModel, mask_operation=Metashape.MaskOperationReplacement)
-    save(doc)
-
-    build_depths_progress_bar = TqdmUpdate(total=100, desc="Building initial depth maps")
-
-    # build depth map in ultra quality
-    chunk.buildDepthMaps(downscale=1, filter_mode=Metashape.MildFiltering, max_neighbors=100,
-                         cameras=chunk.cameras, progress=build_depths_progress_bar.update_to)
-
-    save(doc)
-
-    build_point_cloud_progress_bar = TqdmUpdate(total=100, desc="Building point cloud")
-
-    chunk.buildPointCloud(source_data=Metashape.DataSource.DepthMapsData, point_confidence=True, keep_depth=True,
-                          progress=build_point_cloud_progress_bar.update_to)
-
-    save(doc)
-
-    chunk.exportPointCloud(str((export / "pointcloud.ply").resolve()), source_data=Metashape.DataSource.PointCloudData)
-
-    save(doc)
-
-    print("Done!")
+    state_machine.run()
 
 
 if __name__ == "__main__":
-    sm = MetashapeMachine()
+    sm = MetashapeMachine(Path("data"), Path("frames"))
     img_path = str(Path("machine.png").resolve())
     sm._graph().write_png(img_path)

@@ -20,7 +20,7 @@ from helpers import get_all_files
 
 
 def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
-                   use_mask: bool = False, regenerate: bool = True):
+                   use_mask: bool = False, regenerate: bool = True, drop_ratio: float = 0.5):
     """
     Function to process video files from a specified directory for tree reconstruction
 
@@ -43,15 +43,15 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
         print(f"The provided video path: {video_path} does not exist.")
         return
 
+    video_files = get_all_files(video_path, "*")
+
     tools_path = data_path / "tools"
-    export_path = data_path / "export" / str(time.time() * 1000)
+    export_path = data_path / "export" / video_files[0].name
 
     temp_path = data_path / "tmp"
 
     frames_path = temp_path / "frames"
     mask_path = temp_path / "masks"
-
-    video_files = get_all_files(video_path, "*")
 
     for file in video_files:
         print(file)
@@ -80,7 +80,7 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
         for video_file in video_files:
             media_tools.extract_frames(video_file,
                                        frames_path,
-                                       0.95)  # 0.95 = 95% of the original video dropped or from 60 fps to 3 fps
+                                       drop_ratio)  # 0.95 = 95% of the original video dropped or from 60 fps to 3 fps
 
         frame_end_time = time.time()
         frame_elapsed_time = frame_end_time - frame_start_time
@@ -101,7 +101,7 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
 
     export_path.mkdir(parents=True, exist_ok=True)
 
-    process_frames(data_path, frames_path, export_path, mask_path, use_mask)
+    process_frames(data_path, frames_path, export_path, mask_path)
 
     end_time = time.time()
     frame_elapsed_time = end_time - start_time
@@ -129,4 +129,4 @@ if __name__ == '__main__':
     data_dir = Path("Data")
     video_subdir = data_dir / Path("video")
 
-    process_videos(data_dir, video_subdir, use_mask=True, regenerate=False)
+    process_videos(data_dir, video_subdir, use_mask=True, regenerate=False, drop_ratio=0)
