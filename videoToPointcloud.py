@@ -22,10 +22,10 @@ from helpers import get_all_files
 def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
                    use_mask: bool = False, regenerate: bool = True, drop_ratio: float = 0.5):
     """
-    Function to process video files from a specified directory for tree reconstruction
+    Function to process video_old files from a specified directory for tree reconstruction
 
     :param data_path: Directory path where data files are located
-    :param video_path: Directory path where video files are located
+    :param video_path: Directory path where video_old files are located
     :param use_mask: Boolean flag indicating if sky removal masks should be generated or not
     :param regenerate: Boolean flag indicating if existing files should be regenerated or not
     """
@@ -40,7 +40,7 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
         return
 
     if not video_path.exists():
-        print(f"The provided video path: {video_path} does not exist.")
+        print(f"The provided video_old path: {video_path} does not exist.")
         return
 
     video_files = get_all_files(video_path, "*")
@@ -48,7 +48,7 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
     tools_path = data_path / "tools"
     export_path = data_path / "export" / video_files[0].name
 
-    temp_path = data_path / "tmp"
+    temp_path = data_path / "tmp" / video_files[0].name
 
     frames_path = temp_path / "frames"
     mask_path = temp_path / "masks"
@@ -80,7 +80,7 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
         for video_file in video_files:
             media_tools.extract_frames(video_file,
                                        frames_path,
-                                       drop_ratio)  # 0.95 = 95% of the original video dropped or from 60 fps to 3 fps
+                                       drop_ratio)  # 0.95 = 95% of the original video_old dropped or from 60 fps to 3 fps
 
         frame_end_time = time.time()
         frame_elapsed_time = frame_end_time - frame_start_time
@@ -129,4 +129,4 @@ if __name__ == '__main__':
     data_dir = Path("Data")
     video_subdir = data_dir / Path("video")
 
-    process_videos(data_dir, video_subdir, use_mask=True, regenerate=False, drop_ratio=0)
+    process_videos(data_dir, video_subdir, use_mask=True, regenerate=False, drop_ratio=0.25)

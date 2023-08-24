@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from typing import List, Union, Tuple
 
@@ -9,6 +10,8 @@ from tqdm import tqdm
 
 from Tools.SM import SerializableStateMachine
 from helpers import get_all_files
+
+from concurrent.futures import ThreadPoolExecutor
 
 
 class TqdmUpdate(tqdm):
@@ -52,6 +55,7 @@ class MetashapeMachine(SerializableStateMachine):
     optimize_alignment = State(name="Optimize alignment")
     filter_uncertainty = State(name="Filter reconstruction uncertainty")
     filter_accuracy = State(name="Filter projection accuracy")
+    second_iterative_align = State(name="Re-filter projection accuracy")
     build_rough_model = State()
     reduce_overlap = State(name="Reduce camera overlap")
     generate_masks = State(name="Generate model-based mask")
@@ -66,11 +70,11 @@ class MetashapeMachine(SerializableStateMachine):
             | clean_cameras.to(broad_match_photos)
             | broad_match_photos.to(broad_align_cameras)
             | broad_align_cameras.to(iterative_align)
-            | iterative_align.to(optimize_alignment, unless="guard_prealigned")
-            | iterative_align.to(build_rough_model, cond="guard_prealigned")
+            | iterative_align.to(optimize_alignment)
             | optimize_alignment.to(filter_uncertainty)
             | filter_uncertainty.to(filter_accuracy)
-            | filter_accuracy.to(iterative_align)
+            | filter_accuracy.to(second_iterative_align)
+            | second_iterative_align.to(build_rough_model)
             | build_rough_model.to(reduce_overlap)
             | reduce_overlap.to(generate_masks)
             | generate_masks.to(build_depth_maps)
@@ -93,7 +97,6 @@ class MetashapeMachine(SerializableStateMachine):
                 "alignmentCount": self.alignment_count}
         return dict
 
-
     def set_supplementary_state(self, dictionary: dict):
         self.set_size: int = dictionary.get("setSize")
         self.set_size_ratio: dictionary.get("setSizeRatio")
@@ -105,6 +108,10 @@ class MetashapeMachine(SerializableStateMachine):
             self.Doc.save()
 
         self.serialize_statemachine()
+
+    def before_cycle(self, event: str, source: State, target: State, message: str = ""):
+        message = ". " + message if message else ""
+        return f"Transitioning {event} from {source.id} to {target.id}{message}"
 
     def on_enter_load_project(self):
         print("Loading project.")
@@ -150,15 +157,27 @@ class MetashapeMachine(SerializableStateMachine):
                                 progress=broad_photos_alignment_progress_bar.update_to)
 
     def on_enter_iterative_align(self):
+        print("Iteratively aligning cameras.")
+
+        iterative_align_cameras(self.Chunk, self.set_size)
+
+        self.alignment_count += 1
+
+    def on_second_iterative_align(self):
+        print("Iteratively aligning cameras (2nd run).")
 
         iterative_align_cameras(self.Chunk, self.set_size)
 
         self.alignment_count += 1
 
     def on_enter_optimize_alignment(self):
+        print("Iteratively optimizing alignment.")
+
         optimize_alignment(self.Chunk)
 
     def on_enter_filter_uncertainty(self):
+        print("Filtering Uncertainty.")
+
         filter_reconstruction_uncertainty(self.Chunk)
 
     def on_enter_filter_accuracy(self):
@@ -172,7 +191,7 @@ class MetashapeMachine(SerializableStateMachine):
 
     def on_enter_reduce_overlap(self):
         reduce_overlap_progress_bar = TqdmUpdate(total=100, desc="Reducing camera overlap")
-        self.Chunk.reduceOverlap(overlap=3, progress=reduce_overlap_progress_bar.update_to)
+        self.Chunk.reduceOverlap(overlap=6, progress=reduce_overlap_progress_bar.update_to)
 
     def on_enter_generate_masks(self):
         self.Chunk.generateMasks(masking_mode=Metashape.MaskingModeModel,
@@ -189,8 +208,7 @@ class MetashapeMachine(SerializableStateMachine):
         build_point_cloud_progress_bar = TqdmUpdate(total=100, desc="Building point cloud")
 
         self.Chunk.buildPointCloud(source_data=Metashape.DataSource.DepthMapsData, point_confidence=True,
-                                   keep_depth=True,
-                                   progress=build_point_cloud_progress_bar.update_to)
+                                   keep_depth=True, progress=build_point_cloud_progress_bar.update_to)
 
     def on_enter_export_point_cloud(self):
         export_point_cloud_progress_bar = TqdmUpdate(total=100, desc="Exporting Point Cloud")
@@ -198,6 +216,9 @@ class MetashapeMachine(SerializableStateMachine):
         self.Chunk.exportPointCloud(str((self.export_path / "pointcloud.ply").resolve()),
                                     source_data=Metashape.DataSource.PointCloudData,
                                     progress=export_point_cloud_progress_bar.update_to)
+
+    def on_exit_export_point_cloud(self):
+        shutil.rmtree(self.filename)
 
     def run(self):
         while self.current_state not in self.final_states:
@@ -289,7 +310,7 @@ def iterative_match_photos(chunk, set_size: int = 250, overlap_ratio: float = 0.
             print(f"Matching photos {start_index} to {end_index}")
             try:
                 chunk.matchPhotos(cameras=match_list, downscale=1, generic_preselection=False,
-                                  reference_preselection=False, keep_keypoints=True, keypoint_limit=40000,
+                                  reference_preselection=False, keep_keypoints=True, keypoint_limit=60000,
                                   tiepoint_limit=4000, progress=matching_bar.update_to)
             except Exception as e:
                 handle_error(e)
@@ -355,7 +376,7 @@ def iterative_align_cameras(chunk: Chunk, batch_size: int = 50, max_iterations: 
         if iteration == max_iterations:
             print(f"Stopped realignment after {max_iterations} iterations.")
         else:
-            print(f"All cameras realaligned after {iteration} iterations.")
+            print(f"All cameras realigned after {iteration} iterations.")
 
         num_unaligned_cameras_start = num_unaligned_cameras_end
         iteration += 1
@@ -388,8 +409,12 @@ def remove_low_quality_cameras(chunk: Chunk, threshold: float = 0.5) -> None:
     chunk.remove(cameras_to_remove)
 
 
+def get_reprojection_error(i, filter):
+    return filter.values[i]
+
+
 def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, lower_percentile: float = 10,
-                       delta_ratio: float = 0.1, total_allowable_error: float = 0.5, iterations: int = 10) -> None:
+                       delta_ratio: float = 0.1, total_allowable_error: float = 0.5, iterations: int = 4) -> None:
     """
         Iteratively optimizes the alignment of tie points in a Metashape Chunk. This is accomplished by removing points
         with high reprojection error and adjusting camera positions. The iterative process continues until the mean or
@@ -408,17 +433,25 @@ def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, low
         :param iterations: Maximum number of iterations for the optimization process.
     """
 
+    print("Optimizing alignment")
+
     points = chunk.tie_points.points
 
     if chunk.tie_points.points is None:
         print("No tie points found")
         return
 
+    print("Got points...")
+
     tie_point_filter_error = Metashape.TiePoints.Filter()
 
     tie_point_filter_error.init(chunk, criterion=Metashape.TiePoints.Filter.ReprojectionError)
 
-    reprojection_errors = [tie_point_filter_error.values[i] for i in range(len(points)) if points[i].valid]
+    print("Initialized filter...")
+
+    reprojection_errors = [error for i, error in enumerate(tie_point_filter_error.values) if points[i].valid]
+
+    print("Calculated reprojection error...")
 
     threshold = np.percentile(reprojection_errors, upper_percentile)
     final_threshold = np.percentile(reprojection_errors, lower_percentile)
@@ -429,6 +462,9 @@ def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, low
 
     error_delta = old_mean_error * delta_ratio
 
+    print(f"threshold {threshold}, final threshold {final_threshold}, decrement {decrement},"
+          f"old mean error {old_mean_error}, error delta {error_delta}")
+
     for _ in tqdm(range(iterations), desc="Optimizing alignment"):
         tie_point_filter_error.selectPoints(threshold)
         chunk.tie_points.removeSelectedPoints()
@@ -436,32 +472,37 @@ def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, low
         threshold -= decrement
         optimize_cameras(chunk)
 
-        reprojection_errors = [tie_point_filter_error.values[i] for i in range(len(points)) if points[i].valid]
+        reprojection_errors = [error for i, error in enumerate(tie_point_filter_error.values) if points[i].valid]
         new_mean_error = np.mean(reprojection_errors)
 
         error = abs(new_mean_error - old_mean_error)
         if error < error_delta or new_mean_error < total_allowable_error:
             break
 
+        print(f"Iteration finished; mean error {new_mean_error}")
         old_mean_error = new_mean_error
+
+    print("Finished optimizing alignment...")
+
+
+def filter(chunk: Chunk, criterion, threshold: float):
+    # 75 based on trial and error; supported by https://doi.org/10.1007/s00468-019-01866-x
+    tie_point_filter = Metashape.TiePoints.Filter()
+    tie_point_filter.init(chunk, criterion=criterion)
+
+    tie_point_filter.selectPoints(threshold)
+    chunk.tie_points.removeSelectedPoints()
+    chunk.optimizeCameras(fit_corrections=False)
 
 
 def filter_reconstruction_uncertainty(chunk: Chunk, threshold: float = 75):
-    # 75 based on trial and error; supported by https://doi.org/10.1007/s00468-019-01866-x
-    tie_point_filter_uncertainty = Metashape.TiePoints.Filter()
-    tie_point_filter_uncertainty.init(chunk, criterion=Metashape.TiePoints.Filter.ReconstructionUncertainty)
-
-    tie_point_filter_uncertainty.selectPoints(threshold)
-    chunk.tie_points.removeSelectedPoints()
-    chunk.optimizeCameras(fit_corrections=True)
+    print("Filtering for reconstruction uncertainty")
+    filter(chunk, Metashape.TiePoints.Filter.ReconstructionUncertainty, threshold)
 
 
 def filter_projection_accuracy(chunk: Chunk, threshold: float = 10):
-    tie_point_filter_accuracy = Metashape.TiePoints.Filter()
-    tie_point_filter_accuracy.init(chunk, criterion=Metashape.TiePoints.Filter.ProjectionAccuracy)
-    tie_point_filter_accuracy.selectPoints(threshold)
-    chunk.tie_points.removeSelectedPoints()
-    chunk.optimizeCameras(fit_corrections=True)
+    print("Filtering for projection accuracy...")
+    filter(chunk, Metashape.TiePoints.Filter.ProjectionAccuracy, threshold)
 
 
 def process_frames(data: Path, frames: Path, export: Path, mask_path: Union[Path, None] = None):

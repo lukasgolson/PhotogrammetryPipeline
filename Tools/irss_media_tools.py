@@ -31,17 +31,17 @@ class MediaTools:
 
     def extract_frames(self, video_path: Path, output_path: Path, drop: float = 0.5) -> None:
         """
-        Extract frames from the video at the given path.
+        Extract frames from the video_old at the given path.
 
         Args:
-            video_path: The path to the video file.
+            video_path: The path to the video_old file.
             output_path: The path to save the extracted frames.
             drop: The drop rate for frame extraction.
 
         Returns:
             None
         """
-        print(f"Extracting frames from video at path: {video_path}")
+        print(f"Extracting frames from video_old at path: {video_path}")
 
         command = f'extract --input "{video_path.resolve()}" ' \
                   f'--output "{output_path.resolve()}" ' \
@@ -51,13 +51,13 @@ class MediaTools:
             exit_code = self.tool.run_command(command)
 
             if exit_code != 0:
-                raise Exception(f"Failed to extract frames from video at path: {video_path}")
+                raise Exception(f"Failed to extract frames from video_old at path: {video_path}")
             else:
-                print(f"Extracting frames from video at path: {video_path} completed with exit code: {exit_code}")
+                print(f"Extracting frames from video_old at path: {video_path} completed with exit code: {exit_code}")
 
 
         except Exception as e:
-            print(f"Exception occurred while extracting frames from video at path: {video_path}. Details: {e}")
+            print(f"Exception occurred while extracting frames from video_old at path: {video_path}. Details: {e}")
             raise e
 
     def mask_sky(self, images: Path, output_path: Path,
