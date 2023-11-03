@@ -129,4 +129,4 @@ if __name__ == '__main__':
     data_dir = Path("Data")
     video_subdir = data_dir / Path("video")
 
-    process_videos(data_dir, video_subdir, use_mask=True, regenerate=False, drop_ratio=0.25)
+    process_videos(data_dir, video_subdir, use_mask=True, regenerate=True, drop_ratio=0.95)

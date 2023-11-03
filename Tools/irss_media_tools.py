@@ -11,13 +11,13 @@ class MediaTools:
     PLATFORM_DATA = {
         'Windows': {
             'extension': '.exe',
-            'url': "https://github.com/lukasdragon/MediaTools/releases/download/latest/win-x64.zip"
+            'url': "https://github.com/IRSS-UBC/MediaTools/releases/download/latest/win-x64.zip"
         },
         'Darwin': {
-            'url': "https://github.com/lukasdragon/MediaTools/releases/download/latest/osx-x64.zip"
+            'url': "https://github.com/IRSS-UBC/MediaTools/releases/download/latest/osx-x64.zip"
         },
         'Linux': {
-            'url': "https://github.com/lukasdragon/MediaTools/releases/download/latest/linux-x64.zip"
+            'url': "https://github.com/IRSS-UBC/MediaTools/releases/download/latest/linux-x64.zip"
         },
     }
 

@@ -187,7 +187,8 @@ class MetashapeMachine(SerializableStateMachine):
         build_rough_model_progress_bar = TqdmUpdate(total=100, desc="Building Rough Model")
         self.Chunk.buildModel(surface_type=Metashape.SurfaceType.Arbitrary,
                               source_data=Metashape.DataSource.TiePointsData,
-                              progress=build_rough_model_progress_bar.update_to)
+                              progress=build_rough_model_progress_bar.update_to,
+                              subdivide_task=True)
 
     def on_enter_reduce_overlap(self):
         reduce_overlap_progress_bar = TqdmUpdate(total=100, desc="Reducing camera overlap")
@@ -195,7 +196,7 @@ class MetashapeMachine(SerializableStateMachine):
 
     def on_enter_generate_masks(self):
         self.Chunk.generateMasks(masking_mode=Metashape.MaskingModeModel,
-                                 mask_operation=Metashape.MaskOperationReplacement)
+                                 mask_operation=Metashape.MaskOperationIntersection)
 
     def on_enter_build_depth_maps(self):
         build_depths_progress_bar = TqdmUpdate(total=100, desc="Building initial depth maps")
@@ -486,7 +487,6 @@ def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, low
 
 
 def filter(chunk: Chunk, criterion, threshold: float):
-    # 75 based on trial and error; supported by https://doi.org/10.1007/s00468-019-01866-x
     tie_point_filter = Metashape.TiePoints.Filter()
     tie_point_filter.init(chunk, criterion=criterion)
 
@@ -495,6 +495,7 @@ def filter(chunk: Chunk, criterion, threshold: float):
     chunk.optimizeCameras(fit_corrections=False)
 
 
+# 75 based on trial and error; supported by https://doi.org/10.1007/s00468-019-01866-x
 def filter_reconstruction_uncertainty(chunk: Chunk, threshold: float = 75):
     print("Filtering for reconstruction uncertainty")
     filter(chunk, Metashape.TiePoints.Filter.ReconstructionUncertainty, threshold)
