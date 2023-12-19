@@ -5,16 +5,12 @@ from typing import List, Union, Tuple
 import Metashape
 import numpy as np
 from Metashape import Chunk, Camera
+from loguru import logger
 from statemachine import State
 from tqdm import tqdm
 
 from Tools.SM import SerializableStateMachine
 from helpers import get_all_files
-
-from concurrent.futures import ThreadPoolExecutor
-
-from loguru import logger
-
 
 
 class TqdmUpdate(tqdm):
@@ -467,7 +463,7 @@ def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, low
     error_delta = old_mean_error * delta_ratio
 
     logger.info(f"threshold {threshold}, final threshold {final_threshold}, decrement {decrement},"
-          f"old mean error {old_mean_error}, error delta {error_delta}")
+                f"old mean error {old_mean_error}, error delta {error_delta}")
 
     for _ in tqdm(range(iterations), desc="Optimizing alignment"):
         tie_point_filter_error.selectPoints(threshold)

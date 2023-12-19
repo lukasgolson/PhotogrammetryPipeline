@@ -5,6 +5,8 @@ from typing import Optional
 
 from Tools import downloadable_tool
 
+from loguru import logger
+
 URL = "https://github.com/OpenDroneMap/SkyRemoval/archive/91fe0362b14cb74c7a5383cf3e83d764b749972d.zip"
 EXTENSION = ".py"
 SUBDIR = "SkyRemoval-91fe0362b14cb74c7a5383cf3e83d764b749972d"
@@ -24,7 +26,7 @@ class SkyRemoval:
             self.tool.setup()
 
         except Exception as e:
-            print(f"Failed to setup the tool: {e}")
+            logger.error(f"Failed to setup the tool: {e}")
             raise
 
     def remove_sky(self, source: Path, destination: Path, model: Optional[str] = None, ignore_cache: bool = False,
@@ -49,9 +51,9 @@ class SkyRemoval:
         command = _form_sky_removal_command(source, destination, model, ignore_cache, in_size_w, in_size_h)
         try:
             exit_code = self.tool.run_command(command)
-            print(f"Sky removal completed with exit code: {exit_code}")
+            logger.success(f"Sky removal completed with exit code: {exit_code}")
         except Exception as e:
-            print(f"Failed to execute the command: {e}")
+            logger.error(f"Failed to execute the command: {e}")
             raise
 
 

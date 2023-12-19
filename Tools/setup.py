@@ -3,31 +3,28 @@ import sys
 
 from Tools.irss_media_tools import MediaTools
 from helpers import get_all_files
+from loguru import logger
 
 
 def install_and_import(package, path_to_whl=None):
     try:
         __import__(package)
-        print(f"{package} is already installed.")
+        logger.info(f"{package} is already installed.")
     except ImportError:
-        print(f"{package} not found. Installing...")
+        logger.info(f"{package} not found. Installing...")
         if path_to_whl is None:
             subprocess.check_call([sys.executable, '-m', 'pip', 'install', package])
         else:
             subprocess.check_call([sys.executable, '-m', 'pip', 'install', path_to_whl])
-        print(f"{package} has been installed.")
+        logger.info(f"{package} has been installed.")
     finally:
         globals()[package] = __import__(package)
 
 
 def install_requirements():
-    print("Installing packages from requirements.txt...")
+    logger.info("Installing packages from requirements.txt...")
     subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'])
-    print("All packages from requirements.txt have been installed.")
-
-
-def downloadMetashape():
-
+    logger.info("All packages from requirements.txt have been installed.")
 
 def main():
     install_requirements()
@@ -40,7 +37,7 @@ def main():
     MediaTools().tool.setup()
 
 
-print("Setup complete.")
+logger.success("Setup complete.")
 
 if __name__ == "__main__":
     main()

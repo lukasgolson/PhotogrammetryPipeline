@@ -6,6 +6,8 @@ from pathlib import Path
 
 from Tools import downloadable_tool, ModelExecutionEngines
 
+from loguru import logger
+
 
 class MediaTools:
     PLATFORM_DATA = {
@@ -41,7 +43,7 @@ class MediaTools:
         Returns:
             None
         """
-        print(f"Extracting frames from video_old at path: {video_path}")
+        logger.info(f"Extracting frames from video_old at path: {video_path}")
 
         command = f'extract --input "{video_path.resolve()}" ' \
                   f'--output "{output_path.resolve()}" ' \
@@ -53,17 +55,17 @@ class MediaTools:
             if exit_code != 0:
                 raise Exception(f"Failed to extract frames from video_old at path: {video_path}")
             else:
-                print(f"Extracting frames from video_old at path: {video_path} completed with exit code: {exit_code}")
+                logger.success(f"Extracting frames from video_old at path: {video_path} completed with exit code: {exit_code}")
 
 
         except Exception as e:
-            print(f"Exception occurred while extracting frames from video_old at path: {video_path}. Details: {e}")
+            logger.error(f"Exception occurred while extracting frames from video_old at path: {video_path}. Details: {e}")
             raise e
 
     def mask_sky(self, images: Path, output_path: Path,
                  engine: ModelExecutionEngines = ModelExecutionEngines.CPU) -> None:
 
-        print(f"Masking sky in images from path: {images}")
+        logger.info(f"Masking sky in images from path: {images}")
 
         command = f'mask_sky --input "{images.resolve()}" ' \
                   f'--output "{output_path.resolve()}" ' \
@@ -75,9 +77,9 @@ class MediaTools:
             if exit_code != 0:
                 raise Exception(f"Failed to mask images from path: {images}")
             else:
-                print(f"Masking images from path: {images} completed with exit code: {exit_code}")
+                logger.success(f"Masking images from path: {images} completed with exit code: {exit_code}")
 
 
         except Exception as e:
-            print(f"Exception occurred while masking images from path: {images}. Details: {e}")
+            logger.error(f"Exception occurred while masking images from path: {images}. Details: {e}")
             raise e

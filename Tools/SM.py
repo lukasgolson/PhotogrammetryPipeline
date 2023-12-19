@@ -1,6 +1,7 @@
 import pickle
 
 from statemachine import StateMachine
+from loguru import logger
 
 
 class SerializableStateMachine(StateMachine):
@@ -27,7 +28,7 @@ class SerializableStateMachine(StateMachine):
             with open(self.filename, 'wb') as file:
                 pickle.dump(pickle_dict, file)
         else:
-            print("No filename. Can't serialize.")
+            logger.error("No filename. Can't serialize.")
 
     def deserialize_statemachine(self):
         if self.filename:
@@ -48,7 +49,7 @@ class SerializableStateMachine(StateMachine):
                     supplementary_state = pickle_dict["external_state"]
 
                 except Exception as e:
-                    print("Failed to load serialized checkpoint:", e)
+                    logger.warning("Failed to load serialized checkpoint:", e)
 
             supp_succeeded = self.set_supplementary_state(supplementary_state)
 
@@ -57,13 +58,13 @@ class SerializableStateMachine(StateMachine):
 
             try:
                 if state is not None and supp_succeeded is True:
-                    print("Found saved state... Loading from step: ", t.name)
+                    logger.info("Found saved state... Loading from step: ", t.name)
                     self.current_state = state
             except Exception as e:
-                print("Failed to load current state from checkpoint ", e)
+                logger.error("Failed to load current state from checkpoint ", e)
 
         else:
-            print("No filename. Can't deserialize.")
+            logger.error("No filename. Can't deserialize.")
 
     def get_supplementary_state(self) -> dict:
         dict = {"placeholder": 1}
