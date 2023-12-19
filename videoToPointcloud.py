@@ -16,7 +16,7 @@ from typing import Union
 from Tools import irss_media_tools
 from Tools.agisoft_metashape import process_frames
 from Tools.irss_media_tools import ModelExecutionEngines
-from helpers import get_all_files, get_all_subdirs
+from helpers import get_all_files, get_all_subdir, get_leaf_directories, create_flat_folder_name
 
 
 def process_videos(data_path: Union[str, Path], video_path: Union[str, Path], export_path: Union[str, Path],
@@ -129,7 +129,7 @@ if __name__ == '__main__':
     data_dir = Path("Data")
     video_subdir = data_dir / Path("video")
 
-    footage_group_subdirs = get_all_subdirs(video_subdir)
+    footage_group_subdirs = get_leaf_directories(video_subdir)
 
     print("Processing video files in the following subdirectories:")
     for subdir in footage_group_subdirs:
@@ -137,5 +137,5 @@ if __name__ == '__main__':
 
     for subdir in footage_group_subdirs:
         print(f"Processing video files in {subdir.name}")
-        export_path = data_dir / "export" / subdir.name
+        export_path = data_dir / "export" / create_flat_folder_name(subdir, video_subdir)
         process_videos(data_dir, subdir, export_path, use_mask=True, regenerate=True, drop_ratio=0.95)
