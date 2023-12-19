@@ -18,6 +18,8 @@ from Tools.agisoft_metashape import process_frames
 from Tools.irss_media_tools import ModelExecutionEngines
 from helpers import get_all_files, get_all_subdir, get_leaf_directories, create_flat_folder_name
 
+from loguru import logger
+
 
 def process_videos(data_path: Union[str, Path], video_path: Union[str, Path], export_path: Union[str, Path],
                    use_mask: bool = False, regenerate: bool = True, drop_ratio: float = 0.5):
@@ -36,19 +38,19 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path], ex
     video_path = Path(video_path)
 
     if not data_path.exists():
-        print(f"The provided path: {data_path} does not exist.")
+        logger.warning(f"The provided path: {data_path} does not exist.")
         return
 
     if not video_path.exists():
-        print(f"The provided video_old path: {video_path} does not exist.")
+        logger.warning(f"The provided video_old path: {video_path} does not exist.")
         return
 
-    video_files = get_all_files(video_path, "*")
+    video_files = get_all_files(video_path, "*.mp4", "*.mov", "*.avi", "*.mkv", "*.wmv", "*.flv", "*.webm")
 
     tools_path = data_path / "tools"
     # export_path = data_path / "export" / video_files[0].name
 
-    temp_path = data_path / "tmp" / video_files[0].name
+    temp_path = data_path / "tmp" / export_path.name
 
     frames_path = temp_path / "frames"
     mask_path = temp_path / "masks"
@@ -57,6 +59,7 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path], ex
         print(file)
 
     if regenerate:
+        logger.debug(f"Regenerating files for {video_files[0].name}")
         # If the directory exists, delete it and all its contents
         if temp_path.is_dir():
             shutil.rmtree(temp_path)
@@ -89,7 +92,7 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path], ex
         for path in frames_path.rglob('*'):
             if path.is_file():
                 file_count += 1
-        print(f"Extracted {file_count} frames in {format_elapsed_time(frame_elapsed_time)}")
+        logger.debug(f"Extracted {file_count} frames in {format_elapsed_time(frame_elapsed_time)}")
 
     if use_mask and not mask_path.exists():
         mask_path.mkdir(parents=True, exist_ok=True)
@@ -105,7 +108,7 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path], ex
 
     end_time = time.time()
     frame_elapsed_time = end_time - start_time
-    print(f"Elapsed execution time: {format_elapsed_time(frame_elapsed_time)}")
+    logger.debug(f"Elapsed execution time: {format_elapsed_time(frame_elapsed_time)}")
 
 
 def format_elapsed_time(elapsed_time):
@@ -126,16 +129,17 @@ def format_elapsed_time(elapsed_time):
 
 
 if __name__ == '__main__':
+    logger.add("file_{time}.log")
     data_dir = Path("Data")
     video_subdir = data_dir / Path("video")
 
     footage_group_subdirs = get_leaf_directories(video_subdir)
 
-    print("Processing video files in the following subdirectories:")
+    logger.debug("Processing video files in the following subdirectories:")
     for subdir in footage_group_subdirs:
-        print(subdir.name)
+        logger.debug(subdir.resolve())
 
     for subdir in footage_group_subdirs:
-        print(f"Processing video files in {subdir.name}")
+        logger.debug(f"Processing video files in {subdir.resolve()}")
         export_path = data_dir / "export" / create_flat_folder_name(subdir, video_subdir)
         process_videos(data_dir, subdir, export_path, use_mask=True, regenerate=True, drop_ratio=0.95)

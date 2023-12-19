@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Union, List
 
 
-def get_all_files(dir_path: Union[Path, str], patterns: Union[str, List[str]]) -> List[Path]:
+def get_all_files(dir_path: Union[Path, str], *patterns: Union[str, List[str]]) -> List[Path]:
     """
     Retrieve all files in the specified directory that match the given pattern(s).
     :param dir_path: Directory path as a string or Path object

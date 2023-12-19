@@ -14,6 +14,8 @@ from typing import Dict
 import requests
 from tqdm import tqdm
 
+from loguru import logger
+
 
 class DownloadableTool:
     CHUNK_SIZE = 1024  # define magic constant
@@ -59,11 +61,11 @@ class DownloadableTool:
         Sets up the tool by downloading and extracting it.
         """
         if self.calculate_path().exists():
-            print(f"{self.tool_name} already installed.")
+            logger.success(f"{self.tool_name} already installed.")
             return
 
         self.tool_directory.mkdir(parents=True, exist_ok=True)
-        print(f"Installing {self.tool_name}...")
+        logger.info(f"Installing {self.tool_name}...")
         url = self.get_platform_data()['url']
         self._download(url)
 
@@ -72,13 +74,13 @@ class DownloadableTool:
             requirements = (self.calculate_dir() / "requirements.txt")
 
             if requirements.exists():
-                print("Installing packages from requirements.txt...")
+                logger.info("Installing packages from requirements.txt...")
                 subprocess.check_call(
                     [sys.executable, "-m", "pip", "install", "-r",
                      requirements.resolve()])
-                print("All packages from requirements.txt have been installed.")
+                logger.success("All packages from requirements.txt have been installed.")
 
-        print(f"{self.tool_name} installed.")
+        logger.success(f"{self.tool_name} installed.")
 
     def _download(self, url: str, extract: bool = True) -> None:
         """
@@ -97,11 +99,11 @@ class DownloadableTool:
                     progress_bar.update(len(chunk))
         progress_bar.close()
 
-        print(f"Downloaded {url} to {local_path}")
+        logger.info(f"Downloaded {url} to {local_path}")
 
         with zipfile.ZipFile(local_path, 'r') as zip_ref:
             zip_ref.extractall(self.tool_directory)
-        print(f"Extracted all files to {self.tool_directory}")
+        logger.info(f"Extracted all files to {self.tool_directory}")
 
         local_path.unlink()
 
@@ -126,7 +128,7 @@ class DownloadableTool:
             if arg.startswith('"') and arg.endswith('"'):
                 commandArgs[i] = arg[1:-1]
 
-        print(f"Running command: {commandArgs}")
+        logger.info(f"Running command: {commandArgs}")
 
         with subprocess.Popen(commandArgs, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1,
                               universal_newlines=True) as p:
@@ -134,11 +136,11 @@ class DownloadableTool:
                 line = p.stdout.readline()
                 if not line:
                     break
-                print(line.strip())
+                logger.info(line.strip())
 
                 # process stderr
             for line in p.stderr:
-                print(line.strip())
+                logger.info(line.strip())
 
             exit_code = p.wait()
         return exit_code

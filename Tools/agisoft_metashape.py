@@ -13,6 +13,9 @@ from helpers import get_all_files
 
 from concurrent.futures import ThreadPoolExecutor
 
+from loguru import logger
+
+
 
 class TqdmUpdate(tqdm):
     def update_to(self, p=1):
@@ -114,17 +117,17 @@ class MetashapeMachine(SerializableStateMachine):
         return f"Transitioning {event} from {source.id} to {target.id}{message}"
 
     def on_enter_load_project(self):
-        print("Loading project.")
+        logger.info("Loading project.")
         self.Doc, self.Chunk, self.Loaded = create_or_load_metashape_project(self.export_path)
 
     def on_enter_add_frames(self):
-        print("Adding frames.")
+        logger.info("Adding frames.")
         if len(self.Chunk.cameras) > 0:
-            print("Chunk already has cameras, skipping adding frames.")
+            logger.debug("Chunk already has cameras, skipping adding frames.")
         else:
             frame_list = sorted(get_all_files(self.frames_path, "*"))
             if not frame_list:
-                print("No frames found in the specified path.")
+                logger.warning("No frames found in the specified path.")
                 return
 
             add_frames_to_chunk(self.Chunk, frame_list)
@@ -132,13 +135,13 @@ class MetashapeMachine(SerializableStateMachine):
         self.set_size = int(len(self.Chunk.cameras)) * self.set_size_ratio
 
     def on_enter_load_sky_masks(self):
-        print("Loading sky masks.")
+        logger.info("Loading sky masks.")
 
         if self.mask_path is not None:
             load_masks(self.Chunk, self.mask_path)
 
     def on_enter_clean_cameras(self):
-        print("Cleaning cameras.")
+        logger.info("Cleaning cameras.")
         remove_low_quality_cameras(self.Chunk)
 
     def on_enter_broad_match_photos(self):
@@ -157,26 +160,26 @@ class MetashapeMachine(SerializableStateMachine):
                                 progress=broad_photos_alignment_progress_bar.update_to)
 
     def on_enter_iterative_align(self):
-        print("Iteratively aligning cameras.")
+        logger.info("Iteratively aligning cameras.")
 
         iterative_align_cameras(self.Chunk, self.set_size)
 
         self.alignment_count += 1
 
     def on_second_iterative_align(self):
-        print("Iteratively aligning cameras (2nd run).")
+        logger.info("Iteratively aligning cameras (2nd run).")
 
         iterative_align_cameras(self.Chunk, self.set_size)
 
         self.alignment_count += 1
 
     def on_enter_optimize_alignment(self):
-        print("Iteratively optimizing alignment.")
+        logger.info("Iteratively optimizing alignment.")
 
         optimize_alignment(self.Chunk)
 
     def on_enter_filter_uncertainty(self):
-        print("Filtering Uncertainty.")
+        logger.info("Filtering Uncertainty.")
 
         filter_reconstruction_uncertainty(self.Chunk)
 
@@ -238,14 +241,14 @@ def create_or_load_metashape_project(data: Path) -> Tuple[Metashape.Document, Me
 
     # If the project file already exists, load it
     if project_path.exists():
-        print("Loading existing project")
+        logger.info("Loading existing project")
         doc.open(str(project_path), read_only=False, ignore_lock=True)
         # Assuming that we'd want to work with the first chunk in the project
         chunk = doc.chunk if len(doc.chunks) > 0 else doc.addChunk()
         loaded = True
     else:
         # Else create and save a new project
-        print("Creating new project")
+        logger.info("Creating new project")
         doc.save(path=str(project_path))
         doc.read_only = False
         chunk = doc.addChunk()
@@ -254,7 +257,7 @@ def create_or_load_metashape_project(data: Path) -> Tuple[Metashape.Document, Me
 
 
 def add_frames_to_chunk(chunk: Metashape.Chunk, frames: List[Path]):
-    print(f"Adding {len(frames)} frames to chunk")
+    logger.info(f"Adding {len(frames)} frames to chunk")
     chunk.addPhotos([str(path) for path in frames])
 
 
@@ -268,15 +271,15 @@ def load_masks(chunk: Metashape.Chunk, mask_path: Path):
                             progress=load_masks_loading_bar.update_to)
 
     except Exception as e:
-        print(f"An error occurred while generating masks: {e}. Continuing...")
+        logger.error(f"An error occurred while generating masks: {e}. Continuing...")
 
 
 def handle_missing_mask(camera_label: str):
-    print(f"No mask file found for camera: {camera_label}")
+    logger.error(f"No mask file found for camera: {camera_label}")
 
 
 def handle_error(e: Exception):
-    print(f"An error occurred: {e}")
+    logger.error(f"An error occurred: {e}")
 
 
 def optimize_cameras(chunk: Chunk):
@@ -294,7 +297,7 @@ def iterative_match_photos(chunk, set_size: int = 250, overlap_ratio: float = 0.
     # Calculate the overlap between sets by multiplying the set size by the overlap ratio.
     overlap = int(set_size * overlap_ratio)
 
-    print(f"Total sets for matching: {total_sets}")
+    logger.info(f"Total sets for matching: {total_sets}")
 
     with tqdm(total=total_sets, desc="Matching", dynamic_ncols=True) as pbar:
         for i in range(0, number_of_cameras, set_size):
@@ -308,7 +311,7 @@ def iterative_match_photos(chunk, set_size: int = 250, overlap_ratio: float = 0.
 
             matching_bar = TqdmUpdate(total=100, desc=f"Matching images, iteration: {i} ")
 
-            print(f"Matching photos {start_index} to {end_index}")
+            logger.info(f"Matching photos {start_index} to {end_index}")
             try:
                 chunk.matchPhotos(cameras=match_list, downscale=1, generic_preselection=False,
                                   reference_preselection=False, keep_keypoints=True, keypoint_limit=60000,
@@ -375,9 +378,9 @@ def iterative_align_cameras(chunk: Chunk, batch_size: int = 50, max_iterations: 
             break
 
         if iteration == max_iterations:
-            print(f"Stopped realignment after {max_iterations} iterations.")
+            logger.info(f"Stopped realignment after {max_iterations} iterations.")
         else:
-            print(f"All cameras realigned after {iteration} iterations.")
+            logger.info(f"All cameras realigned after {iteration} iterations.")
 
         num_unaligned_cameras_start = num_unaligned_cameras_end
         iteration += 1
@@ -406,7 +409,7 @@ def remove_low_quality_cameras(chunk: Chunk, threshold: float = 0.5) -> None:
         if quality < threshold:
             cameras_to_remove.append(camera)
 
-    print(f"Removing {len(cameras_to_remove)} low quality cameras")
+    logger.info(f"Removing {len(cameras_to_remove)} low quality cameras")
     chunk.remove(cameras_to_remove)
 
 
@@ -434,25 +437,25 @@ def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, low
         :param iterations: Maximum number of iterations for the optimization process.
     """
 
-    print("Optimizing alignment")
+    logger.info("Optimizing alignment")
 
     points = chunk.tie_points.points
 
     if chunk.tie_points.points is None:
-        print("No tie points found")
+        logger.info("No tie points found")
         return
 
-    print("Got points...")
+    logger.debug("Got points...")
 
     tie_point_filter_error = Metashape.TiePoints.Filter()
 
     tie_point_filter_error.init(chunk, criterion=Metashape.TiePoints.Filter.ReprojectionError)
 
-    print("Initialized filter...")
+    logger.info("Initialized filter...")
 
     reprojection_errors = [error for i, error in enumerate(tie_point_filter_error.values) if points[i].valid]
 
-    print("Calculated reprojection error...")
+    logger.info("Calculated reprojection error...")
 
     threshold = np.percentile(reprojection_errors, upper_percentile)
     final_threshold = np.percentile(reprojection_errors, lower_percentile)
@@ -463,7 +466,7 @@ def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, low
 
     error_delta = old_mean_error * delta_ratio
 
-    print(f"threshold {threshold}, final threshold {final_threshold}, decrement {decrement},"
+    logger.info(f"threshold {threshold}, final threshold {final_threshold}, decrement {decrement},"
           f"old mean error {old_mean_error}, error delta {error_delta}")
 
     for _ in tqdm(range(iterations), desc="Optimizing alignment"):
@@ -480,10 +483,10 @@ def optimize_alignment(chunk: Metashape.Chunk, upper_percentile: float = 90, low
         if error < error_delta or new_mean_error < total_allowable_error:
             break
 
-        print(f"Iteration finished; mean error {new_mean_error}")
+        logger.info(f"Iteration finished; mean error {new_mean_error}")
         old_mean_error = new_mean_error
 
-    print("Finished optimizing alignment...")
+    logger.info("Finished optimizing alignment...")
 
 
 def filter(chunk: Chunk, criterion, threshold: float):
@@ -497,12 +500,12 @@ def filter(chunk: Chunk, criterion, threshold: float):
 
 # 75 based on trial and error; supported by https://doi.org/10.1007/s00468-019-01866-x
 def filter_reconstruction_uncertainty(chunk: Chunk, threshold: float = 75):
-    print("Filtering for reconstruction uncertainty")
+    logger.info("Filtering for reconstruction uncertainty")
     filter(chunk, Metashape.TiePoints.Filter.ReconstructionUncertainty, threshold)
 
 
 def filter_projection_accuracy(chunk: Chunk, threshold: float = 10):
-    print("Filtering for projection accuracy...")
+    logger.info("Filtering for projection accuracy...")
     filter(chunk, Metashape.TiePoints.Filter.ProjectionAccuracy, threshold)
 
 
