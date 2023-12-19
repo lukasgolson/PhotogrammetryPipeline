@@ -16,3 +16,16 @@ def get_all_files(dir_path: Union[Path, str], patterns: Union[str, List[str]]) -
     matching_files = {p for pattern in patterns for p in dir_path.rglob(pattern)}
 
     return list(matching_files)
+
+
+def get_all_subdirs(dir_path: Union[Path, str]) -> List[Path]:
+    """
+    Retrieve all subdirectories in the specified directory.
+    :param dir_path: Directory path as a string or Path object
+    :return: List of Path objects of all subdirectories
+    """
+
+    dir_path = Path(dir_path) if isinstance(dir_path, str) else dir_path
+    subdirs = [p for p in dir_path.iterdir() if p.is_dir()]
+
+    return subdirs

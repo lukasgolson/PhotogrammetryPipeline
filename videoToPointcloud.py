@@ -16,10 +16,10 @@ from typing import Union
 from Tools import irss_media_tools
 from Tools.agisoft_metashape import process_frames
 from Tools.irss_media_tools import ModelExecutionEngines
-from helpers import get_all_files
+from helpers import get_all_files, get_all_subdirs
 
 
-def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
+def process_videos(data_path: Union[str, Path], video_path: Union[str, Path], export_path: Union[str, Path],
                    use_mask: bool = False, regenerate: bool = True, drop_ratio: float = 0.5):
     """
     Function to process video_old files from a specified directory for tree reconstruction
@@ -46,7 +46,7 @@ def process_videos(data_path: Union[str, Path], video_path: Union[str, Path],
     video_files = get_all_files(video_path, "*")
 
     tools_path = data_path / "tools"
-    export_path = data_path / "export" / video_files[0].name
+    # export_path = data_path / "export" / video_files[0].name
 
     temp_path = data_path / "tmp" / video_files[0].name
 
@@ -129,4 +129,13 @@ if __name__ == '__main__':
     data_dir = Path("Data")
     video_subdir = data_dir / Path("video")
 
-    process_videos(data_dir, video_subdir, use_mask=True, regenerate=True, drop_ratio=0.95)
+    footage_group_subdirs = get_all_subdirs(video_subdir)
+
+    print("Processing video files in the following subdirectories:")
+    for subdir in footage_group_subdirs:
+        print(subdir.name)
+
+    for subdir in footage_group_subdirs:
+        print(f"Processing video files in {subdir.name}")
+        export_path = data_dir / "export" / subdir.name
+        process_videos(data_dir, subdir, export_path, use_mask=True, regenerate=True, drop_ratio=0.95)
