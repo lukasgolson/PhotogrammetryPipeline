@@ -10,3 +10,4 @@ data/*
 *.lic
 project.zip
 metashape_project.psx
+/*.log

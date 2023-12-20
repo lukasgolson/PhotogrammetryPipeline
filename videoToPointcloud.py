@@ -8,6 +8,7 @@ https://www.agisoft.com/downloads/installer/ into the `bin` folder.
 """
 import datetime
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -129,7 +130,9 @@ def format_elapsed_time(elapsed_time):
 
 
 if __name__ == '__main__':
-    logger.add("file_{time}.log")
+    logger.add("logs/log_{time}.txt", colorize=True, format="<green>{time}</green> <level>{message}</level>", enqueue=True,
+               rotation="50 MB", compression="zip", backtrace=True, diagnose=True)
+    logger.add(sys.stdout, colorize=True, format="<green>{time}</green> <level>{message}</level>")
     data_dir = Path("Data")
     video_subdir = data_dir / Path("video")
 

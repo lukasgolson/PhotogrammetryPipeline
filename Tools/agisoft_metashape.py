@@ -17,6 +17,7 @@ class TqdmUpdate(tqdm):
     def update_to(self, p=1):
         self.update(p - self.n)  # Provide here progress increment
         if p >= self.total:  # Check if the progress is complete
+            logger.info(f"Finished {tqdm.desc}")
             self.close()
 
 
@@ -98,9 +99,9 @@ class MetashapeMachine(SerializableStateMachine):
 
     def set_supplementary_state(self, dictionary: dict):
         self.set_size: int = dictionary.get("setSize")
-        self.set_size_ratio: dictionary.get("setSizeRatio")
-        self.alignment_count: dictionary.get("alignmentCount")
-        return True;
+        self.set_size_ratio: dictionary.get["setSizeRatio"]
+        self.alignment_count: dictionary.get["alignmentCount"]
+        return True
 
     def after_cycle(self):
         if self.Doc is not None and self.Doc.read_only is not True:
